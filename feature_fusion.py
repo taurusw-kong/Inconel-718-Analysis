@@ -11,10 +11,6 @@ embedding into ONE fused feature vector — the single input the
 unified classifier (classification.py) trains/predicts on for all 10
 classes. No feature group is treated specially per class.
 
-Column naming is prefixed so ablation studies (with/without physics
-features, embeddings-only) are a simple column filter, not separate
-code paths:
-
     morph_<name>   — pure shape descriptors (morphology.py)
     phys_<name>    — composite physics-constrained scores
                      (physics_formulas.py) + calibrated size +
@@ -87,30 +83,6 @@ def flatten_prototype_record(record: dict) -> dict:
 
     return flat
 
-
-# Real feature-importance data from the trained XGBoost model
-# (classifier/feature_importance.csv) shows these contribute nothing
-# or duplicate another feature already present, on a training set of
-# only 131 examples across 8 classes — enough features (92) relative
-# to examples that overfitting to noise dimensions is a real risk, not
-# a hypothetical one. Each one here has a specific, checked reason,
-# not just "low in the importance ranking":
-#
-#   - morph_largest_hole_ratio, morph_curvature_max,
-#     phys_porosity_index: measured importance of exactly 0.0 — the
-#     trained model never uses them at all.
-#   - morph_equivalent_diameter, morph_max_feret, morph_min_feret,
-#     morph_major_axis, morph_minor_axis (the raw-pixel versions):
-#     duplicate the calibrated _um version of the same measurement —
-#     same information twice, at the current uniform 0.1 um/px
-#     calibration.
-#   - morph_bbox_x, morph_bbox_y: encode WHERE in the image frame a
-#     particle sits, not a real physical property. With only 131
-#     examples, a coincidental correlation between image position and
-#     class label is a real leakage risk, not just noise.
-#   - morph_mask_pixels, morph_bbox_width, morph_bbox_height,
-#     morph_bbox_area: already well-represented by morph_area,
-#     equivalent_diameter_um, major_axis_um/minor_axis_um.
 EXCLUDED_SCALAR_FEATURES = {
     "morph_largest_hole_ratio", "morph_curvature_max", "phys_porosity_index",
     "morph_equivalent_diameter", "morph_max_feret", "morph_min_feret",
@@ -125,17 +97,7 @@ def _drop_excluded_features(scalar_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def prototypes_to_frame(records: List[dict]):
-    """
-    -> (scalar_df, embeddings [N x D], labels [N], group_ids [N])
 
-    group_ids identifies which REAL source particle each row traces
-    back to (build_prototypes.py's augmented rotated/flipped views of
-    one real crop all share the same group id) — required for
-    group-aware cross-validation so augmented siblings never split
-    across train/test (see classification.py). Falls back to a unique
-    id per row (each row its own group) for records saved before
-    augmentation existed, i.e. `source_group_id` missing.
-    """
 
     scalar_rows = [flatten_prototype_record(r) for r in records]
     scalar_df = _drop_excluded_features(pd.DataFrame(scalar_rows))
@@ -173,18 +135,7 @@ def particles_to_frame(particles: List[Particle]):
 # ============================================================
 
 class FusionPipeline:
-    """
-    Fits imputation/scaling on scalar features and PCA+scaling on
-    DINOv2 embeddings, then concatenates both into one fused vector.
-    Fit ONCE on the prototype set and persisted (save/load) so
-    production particles at inference time go through the identical
-    transform — required for the fused vector to mean the same thing
-    in both places.
-
-    `use_physics` / `use_dinov2` support the ablation study
-    (feature_fusion.py's column-prefix convention makes "without
-    physics features" a column filter, not a different code path).
-    """
+ 
 
     def __init__(self, dinov2_pca_components: int = 16, random_state: int = 42,
                  use_physics: bool = True, use_morphology: bool = True, use_dinov2: bool = True):
@@ -223,14 +174,7 @@ class FusionPipeline:
 
         if self.scalar_columns_:
 
-            # keep_empty_features=True: a feature that's NaN for every
-            # row in this particular batch (e.g. laplace_pressure_pa
-            # when no example happens to have a detected pore) would
-            # otherwise be silently DROPPED by SimpleImputer,
-            # desynchronizing scalar_columns_ (recorded pre-imputation)
-            # from the actual transformed width — and a column real
-            # elsewhere in production data would then have nothing to
-            # align against.
+       
             self.imputer_ = SimpleImputer(strategy="median", keep_empty_features=True)
             scalar_imputed = self.imputer_.fit_transform(scalar_df.values)
 
@@ -277,13 +221,6 @@ class FusionPipeline:
 
         if self.use_dinov2 and self.embedding_pca_ is not None and embeddings.size > 0:
 
-            # Guard against a backbone mismatch — now reachable since
-            # build_prototypes.py exposes --dinov2_model. Switching
-            # backbones changes the embedding width (vits14=384,
-            # vitb14=768, vitl14=1024), and a classifier trained on one
-            # cannot consume another. sklearn's own error here is
-            # accurate but cryptic ("X has 768 features, but PCA is
-            # expecting 384"); this says what to actually DO about it.
             expected_dim = self.embedding_pca_.n_features_in_
 
             if embeddings.shape[1] != expected_dim:
