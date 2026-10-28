@@ -5,24 +5,12 @@ ParticleVision V4
 Segmentation Validation
 
 Everything downstream (morphology, physics features, attachment,
-classification) depends on SAM2's masks being trustworthy — this
-script measures that directly, independent of classification, exactly
-as the manuscript's Section 5.1 asks for (segmentation performance
-reported on its own, not folded into classification accuracy).
+classification) depends on SAM2's masks being trustworthy, this
+script measures that directly, independent of classification.
 
 Usage:
     python validate_segmentation.py --input_dir <folder with 2-3 images> \\
         --checkpoint <sam2.pt> --model_cfg <sam2.yaml> --device cpu
-
-For each image: SAM2 segments it first, then a window opens showing
-the image. For each of a handful of particles (mix of easy, isolated
-ones and hard, touching ones — pick a variety):
-
-    - left-click to add a point to your hand-drawn outline
-    - 'c' to close the polygon and score it against SAM2's own mask
-    - 'u' to undo the last point
-    - 'n' to move to the next image
-    - 'q' / ESC to stop early and save what you have
 
 Real IoU between your outline and whichever SAM2 mask it best
 overlaps is saved to segmentation_iou_report.csv, plus a printed
@@ -66,14 +54,7 @@ def polygon_to_mask(points: list, image_shape) -> np.ndarray:
 
 
 def best_matching_particle(hand_mask: np.ndarray, particles: list):
-    """
-    Returns (particle, iou) for whichever segmented particle's mask
-    has the highest IoU with the hand-drawn outline — i.e. "which SAM2
-    mask were you actually outlining." None if no particle overlaps
-    at all (SAM2 missed this particle entirely — itself a real,
-    reportable failure, recorded with iou=0.0 and particle=None).
-    """
-
+    
     best_particle = None
     best_iou = 0.0
 
