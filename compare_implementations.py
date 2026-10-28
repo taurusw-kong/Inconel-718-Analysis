@@ -1,27 +1,5 @@
 #!/usr/bin/env python3
-"""
-Compare two independent implementations of the reusability / severity
-scoring on the SAME particles.
 
-WHY THIS IS WORTH DOING
-    A second implementation written from the same concept but different
-    code is an independent check. If the two agree on the ORDERING of
-    defect classes and on which particles are worst, the finding is a
-    property of the concept rather than of one person's code — which is
-    a much stronger claim than a single implementation can make.
-
-    Per-particle values are expected to differ; that is not disagreement
-    about the science, it is different arithmetic. What matters is
-    whether the conclusions survive.
-
-WHAT IT REPORTS
-    - per-class mean/median for both, with deltas
-    - class RANK in each implementation, and rank correlation
-    - per-particle Pearson and Spearman correlation
-    - the classes where the two diverge most
-    - definitional checks (e.g. is a defect-free class scored as zero
-      severity in both?)
-"""
 from __future__ import annotations
 
 import argparse
@@ -84,10 +62,7 @@ def main():
         })
     t = pd.DataFrame(rows)
 
-    # Ranks (1 = most reusable) are the real comparison: they are what
-    # the paper's conclusions rest on, and unlike raw scores they are
-    # invariant to any monotone difference in scaling between the two
-    # implementations.
+
     t[f"rank_{LA}"] = t[f"reuse_mean_{LA}"].rank(ascending=False).astype(int)
     t[f"rank_{LB}"] = t[f"reuse_mean_{LB}"].rank(ascending=False).astype(int)
     t["rank_shift"] = t[f"rank_{LB}"] - t[f"rank_{LA}"]
