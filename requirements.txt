@@ -1,0 +1,28 @@
+# Core
+numpy
+pandas
+scipy
+scikit-image
+scikit-learn
+opencv-python
+joblib
+matplotlib
+pillow
+
+# Deep learning: SAM2 segmentation and DINOv2 features
+torch
+torchvision
+# SAM2 is installed from Meta's repository:
+#   pip install git+https://github.com/facebookresearch/sam2.git
+# DINOv2 weights are fetched by torch.hub on first use.
+
+# Classifiers and explainability
+xgboost
+lightgbm
+catboost
+shap
+
+# Optional
+# cairosvg       # PNG export in paper_figures.py (SVG is always written)
+# pytesseract    # reading the scale bar from the SEM info strip
+# tabpfn-client  # TabPFN baseline; needs the TABPFN_TOKEN environment variable

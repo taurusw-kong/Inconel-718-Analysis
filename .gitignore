@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+
+# Data, results and model weights are not part of this repository
+SEM/
+output/
+checkpoints/
+catboost_info/
+*.pt
+*.pth
+*.joblib
+*.pkl
+*.csv
+*.tif
+*.tiff
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.bak
