@@ -1,19 +1,4 @@
-#!/usr/bin/env python3
-"""
-Fit the Section 4.8.4 ViT on the FULL prototype set and save a
-deployable bundle for vit_inference.classify_particles_vit.
 
-Cross-validation (vit_finetune.cross_validated_vit) exists to MEASURE
-accuracy honestly; this script exists to produce the model that is
-actually shipped, fit on 100% of the labeled data. Both are needed and
-they are deliberately separate: reporting the accuracy of a model fit
-on all data would be meaningless, and shipping a model fit on only 4/5
-of the data would waste labels.
-
-Crops come from prototype_crops.joblib — the cached crop_particle_patch
-output — so the model is trained on exactly the crop function
-vit_inference calls at prediction time.
-"""
 import os
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
@@ -85,9 +70,7 @@ def main():
     device = _pick_device()
     print(f"[train] device {device}, {len(enc.classes_)} classes")
 
-    # _train_one_fold handles the group-aware inner split for early
-    # stopping; passing every index as the training fold means the only
-    # data held back is that internal validation slice.
+    
     all_idx = np.arange(len(y))
     model, scal_t = _train_one_fold(
         tensors, y, groups, all_idx, len(enc.classes_), device, scalars,
@@ -97,7 +80,6 @@ def main():
         val_fraction=0.15, random_state=args.random_state, verbose=True,
     )
 
-    # Persist the SAME standardization the network trained under.
     mu = np.nanmean(scalars, axis=0)
     sd = np.nanstd(scalars, axis=0)
     sd[~np.isfinite(sd) | (sd < 1e-8)] = 1.0
