@@ -17,8 +17,6 @@ from __future__ import annotations
 
 import os
 
-# MUST be set before torch or xgboost is imported anywhere in this
-# process — see classification.py's top-of-file comment.
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import gc
@@ -32,15 +30,6 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import tkinter.font as tkfont
 
-# Headless, same as main.py — this app never embeds a live matplotlib
-# canvas (Results tab displays pre-rendered PNGs via PIL/ImageTk, not
-# FigureCanvasTkAgg), so there's no reason to use the "TkAgg" backend.
-# Using it anyway was a real bug: matplotlib's TkAgg backend ties each
-# plt.subplots() figure to Tkinter's default root, and figures.py's
-# generate_report_figures(..., close=True) calling plt.close() on
-# those figures was destroying THIS APP'S OWN Tk root along with
-# them — reproduced directly (switching to the Results tab silently
-# tore down the whole window mid-session).
 import matplotlib
 matplotlib.use("Agg")
 
@@ -73,19 +62,7 @@ REAL_PATH_DEFAULTS = {
 # ============================================================
 
 def make_scrollable(parent, width=380, padding=10):
-    """
-    Wraps `parent` in a vertically-scrollable canvas and returns the
-    inner frame to pack widgets into.
 
-    Mouse-wheel scroll is platform-aware — this is the actual fix for
-    trackpad two-finger scroll not working: the naive cross-platform
-    handler does `int(-event.delta / 120)`, which is correct for a
-    physical mouse wheel (Windows/most external wheels report deltas
-    in multiples of 120) but WRONG for a macOS trackpad, which reports
-    small deltas (typically +-1 to +-3 per event) — `int(x / 120)`
-    rounds straight to 0 for those, so nothing happens. On darwin, use
-    the delta directly instead of dividing it down.
-    """
 
     outer = ttk.Frame(parent)
     outer.pack(side="left", fill="both", expand=True)
@@ -137,8 +114,7 @@ def make_scrollable(parent, width=380, padding=10):
 
 
 def _draw_tk_rounded_swatch(canvas, x0, y0, x1, y1, color, radius=4):
-    """Rounded-corner legend swatch on a Tkinter Canvas — smoothed polygon,
-    since Canvas has no native rounded-rect primitive."""
+
 
     r = min(radius, (x1 - x0) / 2, (y1 - y0) / 2)
 
@@ -156,7 +132,7 @@ def _draw_tk_rounded_swatch(canvas, x0, y0, x1, y1, color, radius=4):
 # ============================================================
 
 class QueueWriter:
-    """Redirects print()/logger output into a thread-safe queue the GUI polls."""
+   
 
     def __init__(self, q: queue.Queue):
         self.queue = q
@@ -244,7 +220,7 @@ class ParticleVisionGUI(tk.Tk):
 
         # Two columns, side by side, both fully visible without
         # scrolling: settings (fixed width) on the left, log on the
-        # right. No card/border styling here — flat, plain frames.
+        # right. No card/border styling here, flat, plain frames.
         root = ttk.Frame(self.run_tab, padding=14)
         root.pack(fill="both", expand=True)
 
@@ -268,14 +244,7 @@ class ParticleVisionGUI(tk.Tk):
         self.model_cfg_var = tk.StringVar(value=self._default_path("model_cfg"))
         self.calibration_csv_var = tk.StringVar()
         self.fov_width_var = tk.StringVar()
-        # Default 10.0 — this project's real SEM images were verified
-        # (two independent methods, FOV-width and direct scale-bar
-        # measurement, agreeing within 1%) to carry a 10µm scale bar
-        # label. Pre-filled so the corrected geometric measurement
-        # (preprocessing.calibration_from_scale_bar) is used by
-        # default instead of silently falling back to OCR, which was
-        # found to be off by ~10x on these images. Change it if a
-        # different batch uses a different labeled bar length.
+ 
         self.scale_bar_var = tk.StringVar(value="10.0")
         self.examples_dir_var = tk.StringVar()
         self.prototype_mpp_var = tk.StringVar()
@@ -704,8 +673,7 @@ class ParticleVisionGUI(tk.Tk):
 
         ttk.Button(left, text="Refresh list", command=self._populate_preview_list).pack(fill="x", pady=(8, 8))
 
-        # Permanent legend panel, pinned to the bottom-left — a fixed
-        # part of the GUI layout, not drawn onto the image itself.
+       
         self._build_legend_panel(left)
 
         right = ttk.Frame(self.preview_tab, padding=12)
@@ -726,22 +694,13 @@ class ParticleVisionGUI(tk.Tk):
         swatch = 16
         gap = 6
         cell_h = 28
-        # The 8 real defect classes, plus the border-truncation sentinel
-        # (see config.BORDER_TRUNCATED_LABEL) so the grey particles the
-        # overlay shows near image edges have a legend entry explaining
-        # why they're grey instead of a defect color, rather than
-        # looking like an unexplained bug.
+    
         labels = list(config.DEFECT_TAXONOMY) + [config.BORDER_TRUNCATED_LABEL]
         display_names = {config.BORDER_TRUNCATED_LABEL: "Edge-truncated (excluded)"}
         rows = (len(labels) + columns - 1) // columns
 
         legend_font = tkfont.Font(font=("", 10))
 
-        # Measure the actual longest label at this font (not a guess)
-        # so cell width guarantees no overlap regardless of platform
-        # font metrics — this is what "no word overlapping" actually
-        # requires, not just a fixed pixel budget that happens to work
-        # for most labels.
         max_text_w = max(
             legend_font.measure(display_names.get(l, l.replace("_", " ")))
             for l in labels
@@ -750,11 +709,7 @@ class ParticleVisionGUI(tk.Tk):
 
         canvas_w = cell_w * columns + 4
 
-        # Explicit light background + near-black text, not the theme
-        # default — on a dark-mode system a default Canvas background
-        # goes dark, and dark-grey text on a dark background is
-        # exactly "can't see the wording properly." Fixed, high-
-        # contrast colors regardless of system theme.
+    
         canvas = tk.Canvas(
             legend_frame, width=canvas_w, height=rows * cell_h + 6,
             highlightthickness=1, highlightbackground="#d8d7d2", bg="#fcfcfb",
@@ -841,8 +796,6 @@ class ParticleVisionGUI(tk.Tk):
         else:
             overlay = image_rgb.copy()
 
-        # Legend is a permanent GUI panel (bottom-left of the sidebar,
-        # built once in _build_legend_panel), not drawn onto the image.
 
         pil_image = Image.fromarray(overlay)
         pil_image.thumbnail((1000, 800), Image.LANCZOS)
@@ -902,20 +855,7 @@ def argparse_namespace(**kwargs):
 
 
 def _rows_to_display_particles(df: pd.DataFrame, image_shape, label_map=None):
-    """
-    Rebuilds display-only Particle objects from features.csv rows for
-    the preview overlay.
 
-    Uses the REAL per-pixel mask from `label_map` (main.py's
-    save_particle_label_map output, loaded via
-    main.load_particle_label_map) when available — this is what makes
-    the preview show actual particle shape (a real Agglomerate's
-    lumpy outline, a real Clip_Cap's flat truncation) instead of a
-    generic oval. Falls back to an ellipse-at-bbox approximation only
-    for older runs from before label maps were saved, or if the file
-    is missing for some other reason — clearly worse, but better than
-    no preview at all.
-    """
 
     import cv2
     import numpy as np
@@ -934,7 +874,7 @@ def _rows_to_display_particles(df: pd.DataFrame, image_shape, label_map=None):
             mask = label_map == particle_id
 
             if not mask.any():
-                mask = None  # id not found in this map — fall through to the approximation
+                mask = None  
 
         if mask is None:
             mask = np.zeros(image_shape[:2], dtype=np.uint8)
