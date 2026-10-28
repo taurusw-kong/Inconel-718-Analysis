@@ -4,10 +4,10 @@ ParticleVision V4
 
 Prototype Ingest
 
-Turns your 10 hand-sorted folders of confident example crops
+Turns 10 hand-sorted folders of confident example crops
 (one folder per DEFECT_TAXONOMY class, ~10-15 single-particle images
 each) into the labeled prototype set classification.py trains/matches
-against. This is the ONLY manual-labeling step in v4 — a one-time
+against. This is the ONLY manual-labeling step in v4, a one-time
 sitting, not an ongoing review queue.
 
 No SAM2 needed here (deliberately, to keep this script self-contained
@@ -20,9 +20,8 @@ dinov2_features.py), so prototype embeddings are directly comparable
 to production particle embeddings at inference time.
 
 microns_per_pixel is a single value applied to the WHOLE prototype
-set — these crops should come from the same magnification/imaging
-conditions as your main dataset (ideally cropped straight from images
-you've already run through the pipeline).
+set, these crops should come from the same magnification/imaging
+conditions as your main dataset.
 """
 
 from __future__ import annotations
@@ -30,8 +29,7 @@ from __future__ import annotations
 import os
 
 # Must be set before torch/xgboost are imported anywhere in the
-# process — see classification.py's top-of-file comment for why
-# (same-process torch + xgboost segfaults on macOS otherwise).
+# process.
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import argparse
@@ -69,25 +67,9 @@ def _seed_everything(seed: int = 42):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-
-# ============================================================
-# FOLDER NAME RESOLUTION
-# ============================================================
-# Your own folder names don't have to match config.DEFECT_TAXONOMY's
-# internal spelling exactly (spaces/hyphens instead of underscores are
-# fine either way, e.g. "Bonded Particle" == "Bonded_Particle") — only
-# a couple of names use different WORDS ("Sphere" vs the taxonomy's
-# "Spherical") and need an explicit alias below. Nothing renames your
-# actual folders; this only maps what's read from disk onto the
-# taxonomy's internal class names.
-
 _FOLDER_NAME_ALIASES = {
     "perfect_sphere": "Perfect_Spherical",
     "oversized_sphere": "Oversized_Spherical",
-    # Molten_Satellite and Bonded_Satellite were merged into one class
-    # (config.py) after real cross-validated results showed the shape
-    # distinction between them wasn't learnable with the available
-    # example counts — both folders' crops feed the merged class.
     "bonded_satellite": "Molten_Satellite",
 }
 
@@ -113,33 +95,10 @@ def resolve_class_folder_name(folder_name: str):
 
 
 # ============================================================
-# ROUGH PARTICLE MASK(S) (no SAM2 — see module docstring)
+# ROUGH PARTICLE MASK(S)
 # ============================================================
 
 def find_particle_components(image_rgb: np.ndarray, max_components: int = 4) -> list[np.ndarray]:
-    """
-    Finds every significant foreground component in a prototype crop
-    — not just the primary particle. For the 3 attachment-defined
-    classes (Molten/Bonded Satellite, Bonded Particle) the user is
-    told to crop wide enough to show the particle AND whatever it's
-    attached to, so a real second component is often present; picking
-    it up here (instead of only ever isolating one blob) is what lets
-    compute_attachments() give those prototypes real attachment
-    evidence instead of defaulting to "unattached."
-
-    Tries both bright-foreground and dark-foreground Otsu polarity
-    (SEM crops are usually bright-particle-on-dark-background, but not
-    guaranteed) and keeps whichever polarity's components cover a
-    smaller, more particle-like fraction of the frame.
-
-    A host+satellite pair that's genuinely touching (no background gap
-    between them) shows up as ONE connected component here, same as it
-    would from a raw SAM2 mask before segmentation.py's watershed step
-    ever runs — so each raw component is passed through the SAME
-    `split_touching_particles` this project's real pipeline uses,
-    keeping prototype attachment detection consistent with how
-    production particles actually get separated.
-    """
 
     gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -179,18 +138,7 @@ def find_particle_components(image_rgb: np.ndarray, max_components: int = 4) -> 
         split_components = []
 
         for _, comp_mask in raw_components:
-            # A much lower prominence ratio than segmentation.py's own
-            # production default (0.55): there, avoiding over-split of
-            # a genuinely single lumpy particle matters for final
-            # particle counts. Here, the goal is different — reveal
-            # ANY secondary blob (a small satellite fused to a much
-            # larger host is, by definition, a low-prominence bump) so
-            # compute_attachments() below has something to detect at
-            # all. The primary/labeled particle is still always
-            # whichever component sits closest to the crop's center,
-            # so a spuriously over-split single particle just yields a
-            # weak, mostly-harmless extra attachment feature rather
-            # than corrupting the actual label.
+        
             split_components.extend(
                 split_touching_particles(
                     comp_mask, min_distance=6, min_component_area=20,
@@ -201,7 +149,7 @@ def find_particle_components(image_rgb: np.ndarray, max_components: int = 4) -> 
         total_area = sum(np.count_nonzero(m) for m in split_components)
 
         # Prefer the polarity whose kept components cover LESS of the
-        # frame — that's the particle(s), not the background.
+        # frame, that's the particle(s), not the background.
         if best_total_area is None or total_area < best_total_area:
             best_total_area = total_area
             best_components = split_components
@@ -261,10 +209,6 @@ def build_prototype_set(
         if os.path.isdir(os.path.join(examples_dir, d))
     ]
 
-    # A class name -> LIST of folders (not one), since a merged class
-    # (e.g. Molten_Satellite, which absorbed the old Bonded_Satellite
-    # split) can legitimately be fed by more than one folder on disk —
-    # nothing about your actual folder layout has to change for that.
     found_dirs: dict[str, list[str]] = {}
     unknown = []
 
@@ -290,8 +234,7 @@ def build_prototype_set(
     # dinov2_model is a real parameter, not a module-constant patch:
     # build_dinov2_extractor binds its DEFAULT_MODEL default at import
     # time, so reassigning dinov2_features.DEFAULT_MODEL afterward has
-    # NO effect (confirmed — a backbone comparison silently re-ran the
-    # small model and produced byte-identical scores).
+    # NO effect.
     dinov2_extractor = (
         build_dinov2_extractor(device=device, model_name=dinov2_model)
         if dinov2_model
@@ -354,25 +297,6 @@ def build_prototype_set(
                 physics_extractor.extract(p)
                 compute_named_physics_formulas(p, config.PHYSICS)
 
-            # PRIMARY-PARTICLE SELECTION
-            #
-            # These crops were cut BY HAND around one target particle,
-            # so the target is a large object near the middle of the
-            # frame. The previous rules ("closest to centre", and
-            # "smallest" for satellites) both selected on a criterion
-            # that a noise speck wins outright: a 30-pixel fragment
-            # sitting near the centre beats the real particle, and the
-            # smallest component in any crop is essentially always
-            # noise.
-            #
-            # Measured consequence: 44% of selected masks covered under
-            # 5% of the crop, and median circularity of the labelled set
-            # was 0.28 versus 0.80 for production particles — i.e. the
-            # classifier was trained on fragments and deployed on whole
-            # particles.
-            #
-            # Fix: discard candidates too small to be the framed subject,
-            # then choose by size among those overlapping the centre.
             h, w = image_rgb.shape[:2]
             crop_area = float(h * w)
             center = np.array([w / 2.0, h / 2.0])
@@ -394,9 +318,6 @@ def build_prototype_set(
             candidates = central or substantial
 
             if class_name == "Molten_Satellite" and len(candidates) > 1:
-                # The satellite is definitionally the smaller body of an
-                # attached pair — but only among genuine particles, which
-                # is what the size filter above now guarantees.
                 primary = min(candidates, key=_area)
             else:
                 primary = max(candidates, key=_area)
@@ -408,30 +329,6 @@ def build_prototype_set(
                     min_contact_fraction=config.ATTACHMENT.min_contact_fraction,
                     host_size_ratio=config.ATTACHMENT.host_size_ratio,
                 )
-
-            # Rotation/flip augmentation: SEM particles have no
-            # inherent "up", so several rotated/mirrored views of the
-            # SAME real crop are legitimate extra training signal for
-            # the embedding, not fabricated data — every view traces
-            # back to one real labeled particle. All augmented views
-            # share `source_group_id` (this real crop's own particle
-            # id) and the SAME rotation-invariant morphology/physics
-            # values (recomputing them per rotation would just add
-            # noise, not signal); only the DINOv2 embedding differs
-            # per view, since DINOv2 has no built-in rotational
-            # invariance. classification.py's cross-validation MUST
-            # group-split on source_group_id — letting augmented
-            # siblings of one real particle land in both train and
-            # test folds would be leakage, not real accuracy.
-            # Computed once per real particle, not per augmented view:
-            # every v2 feature is rotation/reflection invariant, so
-            # recomputing per view would cost 8x for identical numbers.
-            # Cache the EXACT crop the DINOv2 path uses, keyed by the
-            # real particle id. The fine-tuned ViT must be trained on the
-            # same crop function it will meet at inference — training on
-            # the hand-cut source files while predicting on
-            # crop_particle_patch output would put the model on a
-            # distribution it never saw.
             try:
                 _crop_cache[int(primary.particle_id)] = crop_particle_patch(
                     image_rgb, primary,
@@ -469,10 +366,6 @@ def build_prototype_set(
                     "dinov2_embedding": embedding,
                     "morphology": dict(primary.morphology.values),
                     "physics": dict(primary.physics.values),
-                    # v2 physics feature set (physics_formulas_v2.py).
-                    # Stored alongside, not instead of, the originals so
-                    # the ablation can compare them directly on identical
-                    # segmentation and identical folds.
                     "physics_v2": _v2_cache,
                     "attachment": attachment_snapshot,
                 })
