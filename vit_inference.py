@@ -2,7 +2,7 @@
 ParticleVision V4 — Fine-tuned ViT production inference
 =======================================================
 
-Wires the Section 4.8.4 model (vit_finetune.py) into the pipeline's
+Wires the model (vit_finetune.py) into the pipeline's
 prediction path, so a run can be classified by the fine-tuned ViT
 (cross-validated ~0.70) instead of the fused-vector classifier (~0.40).
 
@@ -11,19 +11,7 @@ THE CROP-CONSISTENCY REQUIREMENT
     crops are produced the same way training crops were. Training uses
     the crops build_prototypes.py cached via crop_particle_patch();
     this module calls that identical function on production particles
-    with the identical padding. Anything else silently shifts the input
-    distribution and the measured accuracy would not apply.
-
-WHAT IS PERSISTED
-    vit_classifier/
-        vit_state.pt        backbone + head weights
-        vit_meta.joblib     class order, scalar names, scalar mean/std,
-                            architecture args, crop settings
-
-    The scalar standardization statistics are saved with the model
-    because they are part of the fitted transform: recomputing them
-    from production data would apply a different transform than the one
-    the network was trained under.
+    with the identical padding. 
 """
 
 from __future__ import annotations
@@ -101,15 +89,7 @@ def load_vit_bundle(output_dir: str):
 # ============================================================
 
 def _scalar_from_particle(particle, scalar_names):
-    """
-    Build the scalar vector for a production Particle.
 
-    vit_finetune's SCALAR_FEATURES read prototype RECORD dicts; a live
-    Particle stores the same quantities on its dataclasses, so the
-    mapping is done explicitly here rather than by duck-typing — a
-    silently-missing field would become a zero after standardization
-    and quietly degrade predictions instead of failing.
-    """
     morph = getattr(particle, "morphology", None)
     morph_vals = getattr(morph, "values", {}) if morph is not None else {}
     att = getattr(particle, "attachment", None)
@@ -139,17 +119,7 @@ def _scalar_from_particle(particle, scalar_names):
 
 @torch.no_grad()
 def classify_particles_vit(particles, image_rgb, bundle, batch_size: int = 32):
-    """
-    Predicts a class for each particle using the fine-tuned ViT and
-    writes it onto particle.prediction, matching what
-    classification.classify_particles produces so downstream code
-    (features.csv, reusability, figures) is unchanged.
-
-    Border-truncated particles are skipped for the same reason the
-    fused-vector path skips them: a particle clipped by the frame has
-    unreliable geometry, and a confident label on it would be worse
-    than an explicit sentinel.
-    """
+   
     import config as _config
 
     model, device = bundle["model"], bundle["device"]
@@ -161,9 +131,6 @@ def classify_particles_vit(particles, image_rgb, bundle, batch_size: int = 32):
     for p in particles:
         (skipped if (p.metadata or {}).get("border_truncated") else target).append(p)
 
-    # Mutate the existing PredictionResult rather than replacing it,
-    # matching classification.classify_particles — anything already
-    # holding a reference to it keeps seeing the live value.
     for p in skipped:
         p.prediction.label = _config.BORDER_TRUNCATED_LABEL
         p.prediction.confidence = 0.0
