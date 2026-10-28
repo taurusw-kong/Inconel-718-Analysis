@@ -7,25 +7,19 @@ Pipeline Orchestration (CLI)
 One run: segment every image (SAM2) -> attachment detection ->
 morphology + physics-constrained features (calibrated to real microns)
 -> DINOv2 embeddings -> classify (unified XGBoost / prototype few-shot
-model, trained from your 10 example folders) -> explainability (SHAP /
+model, trained folders) -> explainability (SHAP /
 nearest-prototype) -> reusability score -> publication figures.
 
-No per-class special-casing anywhere in this chain — every particle
-goes through the exact same sequence regardless of which of the 10
-classes it ends up as.
 """
 
 from __future__ import annotations
 
 import os
 
-# MUST be set before torch or xgboost is imported anywhere in this
-# process — see classification.py's top-of-file comment (same-process
-# torch + xgboost segfaults on macOS otherwise, reproduced directly).
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import matplotlib
-matplotlib.use("Agg")  # headless — gui_app.py also uses Agg (never embeds a live matplotlib canvas)
+matplotlib.use("Agg")  
 
 import argparse
 import datetime
@@ -78,15 +72,7 @@ def save_particle_label_map(particles, image_shape, output_dir: str, image_name:
     label_map = np.zeros(image_shape[:2], dtype=np.uint16)
 
     for particle in particles:
-        # particle.mask from real segmentation is uint8 (0/1), not
-        # bool — indexing with it directly is numpy INTEGER fancy
-        # indexing (each 0/1 value selects a ROW of label_map), not
-        # boolean masking. That silently overwrote rows 0-1 of the
-        # whole label map on every particle instead of the particle's
-        # real shape (confirmed: a real run's saved map had exactly
-        # one label covering 2 x image_width pixels — rows 0 and 1).
-        # Cast explicitly so this is boolean masking regardless of the
-        # mask's actual dtype.
+       
         label_map[particle.mask.astype(bool)] = particle.particle_id
 
     if full_image_shape is not None and full_image_shape[:2] != label_map.shape:
@@ -159,12 +145,7 @@ def particle_to_row(particle: Particle) -> dict:
         "attached_count": len(particle.attachment.attached_particle_ids),
         "boundary_contact_fraction": particle.attachment.boundary_contact_fraction,
         "nearest_neighbor_distance_px": particle.attachment.nearest_neighbor_distance_px,
-        # See segmentation.estimate_border_truncation. border_truncated
-        # particles are excluded from classification, size stats, and
-        # reusability composition (defect_label is the
-        # BORDER_TRUNCATED_LABEL sentinel, not a real defect class) —
-        # kept in this table rather than dropped so the batch's true
-        # detected count stays auditable.
+ 
         "touches_border": particle.metadata.get("touches_border", False),
         "border_fraction": particle.metadata.get("border_fraction", 0.0),
         "border_truncated": particle.metadata.get("border_truncated", False),
@@ -251,19 +232,7 @@ def process_image(
 # ============================================================
 
 def _seed_everything(seed: int = 42):
-    """
-    Confirmed by direct testing: SAM2's automatic mask generator is
-    NOT deterministic across separate process runs on the identical
-    image (two full pipeline runs in the same process agreed with each
-    other; a fresh process's run disagreed) — a complex/irregular
-    particle can be detected in one run and silently missed in the
-    next, with no code change involved. That's a real reproducibility
-    problem for a scientific pipeline independent of the taxonomy/
-    classification work — a fixed seed does not guarantee any specific
-    particle gets detected, but it does guarantee the SAME image
-    produces the SAME segmentation every time you run it, which is
-    what reproducibility actually requires.
-    """
+ 
 
     import random
     import numpy as np
