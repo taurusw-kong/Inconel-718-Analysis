@@ -1,42 +1,11 @@
 """
-ParticleVision V2
+ParticleVision V4
 =================
 
 DINOv2 Self-Supervised Feature Extraction Engine
 
 Computes a frozen DINOv2 embedding for every segmented particle. This
-is the piece named in PROJECT_STATE.md's "central gap": the paper
-claims a DINOv2 self-supervised + morphology + physics fusion
-architecture, and until this module existed there was no learned
-representation anywhere in the pipeline — only rule-based geometry
-(morphology.py, physics_descriptors.py, defect_classification.py).
-
-This module only produces embeddings. It does NOT fuse them with
-morphology/physics or train a classifier — that is the next TODO item
-("feature fusion layer") and depends on this one.
-
-Design notes
-------------
-- Crops come from `image_rgb` (the CLAHE-enhanced image segmentation
-  actually ran on), using each particle's own `bbox`, NOT from the
-  colored classification overlay — the whole point is for DINOv2 to
-  see real particle texture/morphology, not the taxonomy's own paint.
-- A crop is padded around the tight bounding box (`padding_ratio`) so
-  the model sees a little context beyond the exact mask edge — useful
-  signal for contact-dependent classes (Molten_Satellite,
-  Bonded_Particle) where whether/how a particle touches its neighbor
-  matters. Set `mask_background=True` to instead blank out everything
-  outside the particle's own mask if you want pure per-particle
-  texture with zero neighbor contamination — that discards the
-  contact signal, so it's off by default.
-- Crops are letterboxed to square (constant neutral-gray fill, never
-  data-dependent) before resizing to `crop_size`, so a particle's
-  aspect ratio isn't distorted going into a square ViT input.
-- Most particle crops here are small (tens of pixels) and DINOv2 was
-  pretrained on natural photos at 224px+ — expect the upsampling to
-  blur fine texture on the smallest particles. This is a known
-  limitation, not a bug; if it matters for the paper, it's worth
-  reporting crop-size statistics alongside the embeddings.
+is the piece named in PROJECT_STATE.md's "central gap".
 """
 
 from __future__ import annotations
@@ -54,15 +23,7 @@ from data_models import BoundingBox, Particle
 # MODEL REGISTRY
 # ============================================================
 
-# Every official torch.hub entrypoint in facebookresearch/dinov2,
-# mapped to its output embedding dimensionality. "_reg" variants add
-# register tokens (Darcet et al., 2023) — generally cleaner attention
-# maps, drop-in compatible. Default is the smallest plain model: this
-# pipeline already runs on CPU/Apple-Silicon MPS at 50-90s/image for
-# segmentation alone (see PROJECT_STATE.md), so vits14 keeps the
-# extra cost from becoming the new bottleneck. Swap to vitb14/vitl14
-# later if the fusion classifier's accuracy needs it and the hardware
-# can afford it.
+
 DINOV2_MODELS = {
     "dinov2_vits14": 384,
     "dinov2_vitb14": 768,
@@ -76,15 +37,10 @@ DINOV2_MODELS = {
 
 DEFAULT_MODEL = "dinov2_vits14"
 
-# ImageNet normalization statistics — what every DINOv2 checkpoint
-# was pretrained with.
+
 _IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 _IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
-# Neutral fill for letterbox padding / off-image overflow. Deliberately
-# a fixed constant rather than each crop's own mean color, so the fill
-# itself never carries information that could leak into the embedding
-# (e.g. a crop's mean brightness correlating with defect severity).
 _LETTERBOX_FILL = (114, 114, 114)
 
 
@@ -108,15 +64,6 @@ def load_dinov2_model(model_name: str = DEFAULT_MODEL, device: str = "cpu"):
             f"{sorted(DINOV2_MODELS)}"
         )
 
-    # torch and xgboost each bundle their own OpenMP runtime; running
-    # both multi-threaded in the same process (this pipeline needs
-    # DINOv2 embeddings AND an XGBoost classifier together) reliably
-    # SEGFAULTS on macOS the first time xgboost actually trains/infers
-    # after torch has run a real forward pass — reproduced directly,
-    # and neither import order nor KMP_DUPLICATE_LIB_OK fixes it.
-    # Restricting torch to a single thread avoids the conflict
-    # (confirmed) — classification.py's XGBClassifier calls pair this
-    # with n_jobs=1 on its side.
     torch.set_num_threads(1)
 
     print(
@@ -130,15 +77,7 @@ def load_dinov2_model(model_name: str = DEFAULT_MODEL, device: str = "cpu"):
 
     except Exception as exc:
 
-        # torch.hub collapses every download failure into the same
-        # generic "no internet connection" RuntimeError, even when the
-        # real cause is unrelated — most commonly an SSL certificate
-        # verification failure, which on macOS almost always means the
-        # official python.org installer's certificate-install step was
-        # never run (it doesn't hook into the system trust store on its
-        # own). That's a one-time local fix, not a connectivity problem,
-        # so it gets its own diagnosis here instead of the misleading
-        # generic message below.
+       
         if "CERTIFICATE_VERIFY_FAILED" in str(exc):
 
             raise RuntimeError(
@@ -363,27 +302,7 @@ class DINOv2FeatureExtractor:
     def extract_augmented_embeddings(
         self, particle: Particle, image_rgb: np.ndarray, rotations=(0, 90, 180, 270), flip: bool = True,
     ) -> List[np.ndarray]:
-        """
-        For a small labeled prototype set (build_prototypes.py), one
-        embedding per real example isn't much for a classifier to
-        learn from. SEM particles have no inherent "up" — a real
-        Agglomerate rotated 90 degrees is still that same real
-        Agglomerate — so embedding several rotated/mirrored views of
-        the SAME crop is legitimate augmentation, not fabricated data:
-        every view comes from one real labeled particle, and the
-        crop's own morphology/physics features (rotation-invariant —
-        circularity, solidity, area, aspect ratio) are correctly
-        reused unchanged across all of them by the caller; only the
-        embedding differs per view, since DINOv2 itself has no
-        built-in rotational invariance.
-
-        Returns one embedding per (rotation x flip-state) combination
-        — up to len(rotations) * (2 if flip else 1). Caller is
-        responsible for keeping every returned embedding tagged with
-        the SAME source-particle group id, so cross-validation can
-        keep them together in one fold (splitting augmented siblings
-        across train/test would leak — see classification.py).
-        """
+       
 
         crop = crop_particle_patch(
             image_rgb, particle,
