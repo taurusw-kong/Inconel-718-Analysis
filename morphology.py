@@ -4,11 +4,11 @@ ParticleVision V4
 
 Morphology Feature Extraction Engine
 
-Extracts geometric/shape descriptors from segmented particle masks —
+Extracts geometric/shape descriptors from segmented particle masks:
 size, circularity, solidity, aspect ratio, boundary roughness, radial
 asymmetry (comet-tail signature), and localized-neck/dent detection
 (satellite-attachment signal). These are geometric primitives only,
-computed the same way for every particle regardless of class — v4's
+computed the same way for every particle regardless of class, v4's
 classifier (classification.py) is what turns them into a prediction,
 not this module.
 """
@@ -91,13 +91,7 @@ class MorphologyExtractor:
         particle.morphology.set("area", area)
         particle.morphology.set("perimeter", perimeter)
         particle.morphology.set("equivalent_diameter", equivalent_diameter)
-        # bbox_x/bbox_y (top-left corner, image pixel coords) are not
-        # used by any shape descriptor — they're recorded so a
-        # particle can be re-cropped from its source image later
-        # (e.g. by labeling.py's review tool) without re-running
-        # segmentation. Everything else in this class exists to
-        # measure shape; this one field exists so features.csv alone
-        # is enough to find the particle again.
+       
         particle.morphology.set("bbox_x", x)
         particle.morphology.set("bbox_y", y)
         particle.morphology.set("bbox_width", w)
@@ -200,9 +194,6 @@ class MorphologyExtractor:
 
             try:
 
-                # cv2.convexityDefects requires strictly increasing hull
-                # indices; convexHull(returnPoints=False) can return them
-                # out of order for some contours, which raises cv2.error.
                 hull_sorted = np.sort(hull, axis=0)
 
                 defects = cv2.convexityDefects(contour, hull_sorted)
@@ -213,12 +204,6 @@ class MorphologyExtractor:
 
             if defects is not None:
 
-                # cv2 normally returns shape (N, 1, 4), but degenerate
-                # contours can come back as (N, 4) or even (4,) for a
-                # single defect — reshape defensively instead of
-                # assuming the nested shape (which throws
-                # "invalid index to scalar variable" on the flatter
-                # shapes).
                 defects = np.asarray(defects).reshape(-1, 4)
 
                 defect_count = len(defects)
@@ -238,8 +223,7 @@ class MorphologyExtractor:
         particle.morphology.set("convexity_defect_mean_depth", defect_depth_mean)
         particle.morphology.set("convexity_defect_max_depth", defect_depth_max)
 
-        # Stash the raw list (not a numeric column) for use by
-        # _neck_and_dent below.
+       
         particle.metadata["_defect_depths"] = defect_depths
 
     # ==========================================================
@@ -358,23 +342,7 @@ class MorphologyExtractor:
     # ==========================================================
 
     def _radial_profile(self, contour, particle):
-        """
-        Distance of every boundary point to the particle centroid,
-        summarised by its distribution shape.
-
-        A rounded particle (sphere, blob, even a symmetric ellipse)
-        has a roughly symmetric radial-distance histogram. A particle
-        with one small protrusion sticking out (spatter "comet tail",
-        or a satellite still attached at one point) produces a
-        right-skewed, heavy-tailed histogram: most boundary points sit
-        near the core radius, a few sit much farther out.
-
-        radial_skewness   : Fisher skewness of the distance profile.
-        radial_tail_ratio : max distance / median distance. ~1 for a
-                             disk, notably >1 for a body with a
-                             protruding tail/lobe.
-        """
-
+       
         pts = contour.reshape(-1, 2).astype(np.float64)
 
         if len(pts) < 5:
@@ -402,23 +370,7 @@ class MorphologyExtractor:
     # ==========================================================
 
     def _neck_and_dent(self, particle):
-        """
-        Distinguishes a *single localised* concavity (a neck where a
-        satellite/second particle is fused on, or a single impact
-        dent) from *many small, distributed* concavities (dendritic /
-        rough surface texture).
-
-        neck_depth_ratio     : deepest single convexity-defect depth,
-                                normalised by the particle's own
-                                equivalent diameter. A real neck or a
-                                deep dent is large relative to the
-                                particle; surface micro-texture is not.
-        concavity_locality   : max defect depth / mean defect depth.
-                                High => one dominant notch (neck/dent).
-                                ~1   => many similar-sized notches
-                                        (rough/dendritic texture).
-        """
-
+     
         depths = particle.metadata.pop("_defect_depths", [])
         equiv_d = particle.morphology.get("equivalent_diameter")
 
@@ -437,14 +389,6 @@ class MorphologyExtractor:
             max_depth / mean_depth if mean_depth > 0 else np.nan
         )
 
-        # A digitized/rasterized contour produces many *shallow*
-        # convexity "defects" purely from pixel staircasing —
-        # `convexity_defect_count` on its own is dominated by this
-        # noise and carries almost no shape information (a perfect
-        # digital circle typically has 15-25 of these). Only count a
-        # defect as meaningful if it is deep relative to the
-        # particle's own size (i.e. a real notch/neck/dent, not a
-        # staircase artifact).
         significant_threshold = max(1.0, 0.015 * equiv_d)
 
         significant_defect_count = float(
@@ -513,21 +457,7 @@ class MorphologyExtractor:
 # ==========================================================
 
 def apply_calibration(particle: Particle, microns_per_pixel: float):
-    """
-    Converts this particle's key linear/area measurements from raw
-    pixels into real microns, using the per-image calibration from
-    preprocessing.py's calibration chain (manual CSV / FOV-width / OCR
-    scale-bar). Sets `particle.size_um` (the calibrated equivalent
-    diameter — this is what every 20/30/3 um class boundary and every
-    physics formula actually operates on, not the pixel count) plus a
-    few other micron-scaled morphology values physics_formulas.py needs.
-
-    Run this AFTER MorphologyExtractor.extract() (needs
-    equivalent_diameter/max_feret/min_feret already set) and BEFORE
-    physics_formulas.py or classification.py touch the particle — an
-    uncalibrated particle has `size_um = None` and must not silently
-    fall back to a pixel count standing in for microns.
-    """
+   
 
     if microns_per_pixel is None or microns_per_pixel <= 0:
         return particle
