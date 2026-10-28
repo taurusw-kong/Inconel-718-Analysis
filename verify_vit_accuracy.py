@@ -1,40 +1,3 @@
-#!/usr/bin/env python3
-"""
-Independent verification of the fine-tuned DINOv2/ViT accuracy.
-
-The headline number (0.6937) is far above every frozen-embedding model,
-so it should not be trusted on one run's say-so. This script re-derives
-it from scratch and applies the standard checks that would expose the
-ways such a number is usually wrong.
-
-WHAT IT RUNS
-
-  1. REPRODUCE (seed 42)
-     Re-runs the exact evaluation and prints PER-FOLD accuracy, not just
-     the pooled figure. One lucky fold cannot hide inside a mean here.
-
-  2. DIFFERENT SPLITS (seeds 7, 123)
-     Re-runs with different fold boundaries. A real effect survives
-     re-splitting; a number that only exists for one partition of the
-     data does not.
-
-  3. SHUFFLED-LABEL CONTROL  <-- the decisive test
-     Labels are randomly permuted WITHIN the group structure, so the
-     model is asked to learn a mapping that genuinely does not exist.
-     An honest pipeline must collapse to chance (1/8 = 12.5%). If it
-     scores meaningfully above chance on shuffled labels, something is
-     leaking and the real number is not trustworthy either. This is the
-     single most informative check in the script.
-
-  4. PER-PARTICLE PREDICTIONS -> CSV
-     Every particle's true label, predicted label, and source image
-     path, so the result can be checked BY EYE against the actual
-     crops rather than taken on faith.
-
-USAGE
-    python3 verify_vit_accuracy.py                  # all checks
-    python3 verify_vit_accuracy.py --quick          # reproduce + shuffle only
-"""
 
 from __future__ import annotations
 
@@ -130,10 +93,7 @@ def main():
 
     rng = np.random.default_rng(0)
 
-    # Permute labels at the GROUP level, so all 8 augmented views of one
-    # particle keep a single (wrong) label. Shuffling row-by-row instead
-    # would break that consistency and make the task artificially harder
-    # than chance, hiding leakage rather than exposing it.
+  
     groups = np.array([r["source_group_id"] for r in records])
     unique_groups = np.unique(groups)
     group_label = {g: records[int(np.flatnonzero(groups == g)[0])]["class_label"]
