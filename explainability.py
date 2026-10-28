@@ -21,11 +21,8 @@ model predicted it (no class or model gets special treatment):
 - The remaining models (LogisticRegression, KNN, SVM, MLP) don't get
   a per-particle explanation here — SHAP's TreeExplainer doesn't apply
   to them, and the generic KernelExplainer is too slow to run
-  per-particle on a live pipeline. Their predictions are still made
-  and scored normally; they just don't get particle.prediction.explanation.
+  per-particle on a live pipeline. 
 
-Both are computed per-particle (not just as a summary chart) and
-exported as tidy CSVs so any single classification can be justified.
 """
 
 from __future__ import annotations
@@ -57,19 +54,7 @@ def explain_tree_model_predictions(
     classifier: dict,
     top_k: int = TOP_K_SHAP_FEATURES,
 ) -> pd.DataFrame:
-    """
-    For every particle predicted by ANY tree-based model (XGBoost,
-    RandomForest, ExtraTrees, GradientBoosting — grouped by
-    particle.prediction.model_name, since a caller could in principle
-    mix models across particles), computes SHAP values and records the
-    top-k features that most influenced ITS predicted class (not just
-    the raw magnitude — signed, so a caller can tell "pushed toward
-    this class" from "pushed away").
-
-    Sets particle.prediction.explanation to a short human-readable
-    list (e.g. "phys_size_um: +0.42") for the top features, and
-    returns the full tidy table (one row per particle x feature).
-    """
+ 
 
     all_rows = []
 
@@ -145,14 +130,7 @@ def explain_prototype_predictions(
     prototype_records: List[dict],
     k: int = 3,
 ) -> pd.DataFrame:
-    """
-    For every particle predicted by the prototype-few-shot model,
-    records which k labeled prototypes it was actually matched
-    against — the literal basis for the prediction, directly showable
-    to a reader ("classified as X because it most resembles these
-    examples").
-    """
-
+ 
     targets = [p for p in particles if p.prediction.model_name == MODEL_PROTOTYPE]
 
     if not targets:
