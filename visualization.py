@@ -4,15 +4,6 @@ ParticleVision V4
 
 Classification Overlay + Legend
 
-Focused on exactly what the Image Preview tab needs: one clean
-publication-style overlay (flat translucent color per predicted
-class, dashed outline, no clutter) and a matching legend — not the
-full debug-output set v3 generated (numbered/random-color/quality-heat
-variants), since none of those were asked for here.
-
-Overlay does exactly one blend pass over the whole image (build one
-combined color layer, one addWeighted call), so adjacent particles
-never look "double-layered".
 """
 
 from __future__ import annotations
@@ -24,10 +15,7 @@ from data_models import Particle
 from config import CLASSIFICATION, VISUALIZATION, BORDER_TRUNCATED_LABEL, BORDER_TRUNCATED_COLOR
 
 
-# A display-only copy, NOT config.DEFECT_COLORS itself — adding the
-# border-truncation sentinel here gives it its own legend swatch
-# without adding a 9th entry to CLASSIFICATION.labels, which is the
-# real training taxonomy the classifier is fit against.
+
 LABEL_COLORS = dict(CLASSIFICATION.colors)
 LABEL_COLORS[BORDER_TRUNCATED_LABEL] = BORDER_TRUNCATED_COLOR
 
@@ -35,7 +23,7 @@ UNCLASSIFIED_COLOR = (140, 140, 140)
 
 
 # ============================================================
-# ROUNDED RECTANGLE (cv2 has no native primitive for this)
+# ROUNDED RECTANGLE 
 # ============================================================
 
 def draw_rounded_rectangle(image, pt1, pt2, color, radius, thickness=-1):
@@ -240,9 +228,7 @@ def draw_compact_legend_grid(
 
     rows = int(np.ceil(len(labels) / columns))
 
-    # cv2.getTextSize needs the actual text that will be drawn — using
-    # the longest one keeps every column wide enough for any label in
-    # it, guaranteeing no overlap.
+  
     max_text_w = max(
         cv2.getTextSize(label.replace("_", " "), cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1)[0][0]
         for label in labels
@@ -268,8 +254,7 @@ def draw_compact_legend_grid(
     x0, y0 = max(0, x0), max(0, y0)
     x1, y1 = min(w, x0 + grid_w), min(h, y0 + grid_h)
 
-    # Translucent dark backing, rounded corners, blended once (not
-    # per-swatch) so it reads as one clean panel.
+  
     backing = image.copy()
     draw_rounded_rectangle(backing, (x0, y0), (x1, y1), (18, 18, 18), 10, thickness=-1)
     cv2.addWeighted(backing, backing_alpha, image, 1 - backing_alpha, 0, dst=image)
