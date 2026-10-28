@@ -1,10 +1,6 @@
 """
-Segment a list of images and cache their label maps — nothing else.
+Segment a list of images and cache their label maps 
 
-Used to extend an existing run with newly-added images without
-re-segmenting the ones already done. Writes the same
-<base>_labels.npz format main.py does, so reclassify_from_masks.py can
-consume the combined set afterwards.
 """
 import os
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -35,10 +31,7 @@ logger.info(f"{len(names)} image(s) to segment")
 
 os.makedirs(os.path.join(a.output_dir, "masks"), exist_ok=True)
 preprocessor = build_preprocessor()
-# Every parameter here must match main.py's call exactly. The 103
-# masks copied from the earlier run were produced with those settings;
-# segmenting the new images with different ones would make the two
-# halves of the dataset incomparable.
+
 segmenter = build_segmenter(
     checkpoint_path=a.checkpoint,
     model_cfg=a.model_cfg,
