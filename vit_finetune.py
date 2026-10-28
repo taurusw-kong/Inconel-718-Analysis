@@ -2,54 +2,7 @@
 ParticleVision V4
 =================
 
-Fine-tuned DINOv2 / ViT Classification Head  (manuscript Section 4.8.4)
-----------------------------------------------------------------------
-
-Every other model in this project classifies on a FROZEN DINOv2
-embedding: the visual representation is fixed, and only the decision
-boundary is learned. Those models have all converged to within about
-one accuracy point of each other (gradient-boosted trees, a tabular
-transformer, a kernel machine, and a cloud foundation model alike),
-which is evidence that the representation — not the classifier — is
-the binding constraint.
-
-This module tests that directly by unfreezing the backbone, so the
-representation itself adapts to powder-defect morphology. It is the
-only model in the comparison that can change what the features *are*
-rather than how they are combined.
-
-DESIGN NOTES
-
-Partial unfreezing, not full.
-    Only the last `n_unfrozen_blocks` transformer blocks plus the head
-    are trained. Full fine-tuning of a 21M-parameter ViT against ~220
-    real labeled particles would overfit almost immediately; the early
-    blocks hold generic low-level visual structure that is already
-    appropriate for SEM imagery and does not need to move.
-
-Group-aware everything.
-    Augmented views (4 rotations x 2 flips) of one real particle share
-    a source_group_id. Both the outer cross-validation AND the inner
-    early-stopping split hold out whole groups, so a rotated copy of a
-    training particle can never appear in any evaluation set. This
-    mirrors classification.py exactly, so the resulting accuracy is
-    directly comparable to every other model's.
-
-Augmentation is applied on the fly, matching dinov2_features.py's
-    `extract_augmented_embeddings` (same 4 rotations, same horizontal
-    flip, same letterbox-then-resize, same ImageNet normalization), so
-    the fine-tuned model sees the same views the frozen-embedding
-    models were built from.
-
-ONE DOCUMENTED DIFFERENCE FROM THE FROZEN PATH
-    build_prototypes.py re-segments each labeled crop and re-crops the
-    detected particle with padding before embedding it. This module
-    instead loads the labeled crop file directly. Those crops are
-    already tight single-particle images (they were cut by hand for
-    exactly that purpose), so the difference is small — but it is a
-    real difference, and it is stated here rather than buried, because
-    it is the one place this model's input is not bit-identical to the
-    others'.
+Fine-tuned DINOv2 / ViT Classification Head  
 """
 
 from __future__ import annotations
@@ -83,10 +36,7 @@ def _pick_device() -> torch.device:
 # ============================================================
 
 def _augmented_views(crop: np.ndarray):
-    """
-    The same 8 views dinov2_features.extract_augmented_embeddings
-    produces, in the same order, so view i here means view i there.
-    """
+  
     views = []
     for angle in (0, 90, 180, 270):
         rotated = crop
@@ -102,19 +52,7 @@ def _augmented_views(crop: np.ndarray):
 
 
 def _centre_square(image: np.ndarray) -> np.ndarray:
-    """
-    Largest centred square of the image.
-
-    This is the framing control. The labeled crops were cut by hand,
-    and crop RECTANGLE SIZE turns out to correlate with class (measured:
-    a random forest reads the class from crop width/height alone at
-    ~30% vs 12.5% chance, because bigger particles were naturally given
-    bigger rectangles). Letterboxing already destroys absolute size, but
-    aspect ratio and how tightly the particle was framed survive it.
-    Taking a centred square removes the aspect-ratio channel and
-    standardizes framing shape across classes, so a model trained this
-    way cannot be reading the annotator's cropping habits.
-    """
+   
     h, w = image.shape[:2]
     side = min(h, w)
     y0 = (h - side) // 2
@@ -122,10 +60,6 @@ def _centre_square(image: np.ndarray) -> np.ndarray:
     return image[y0:y0 + side, x0:x0 + side]
 
 
-# Physical quantities the resized crop cannot express. Deliberately a
-# SHORT list: each entry is information the image genuinely lost to
-# preprocessing, not a general dump of the tabular features (which would
-# make this a fusion model rather than a test of the visual backbone).
 SCALAR_FEATURES = [
     ("size_um", lambda r: r.get("size_um")),
     ("equivalent_diameter_um", lambda r: r.get("morphology", {}).get("equivalent_diameter_um")),
@@ -134,13 +68,7 @@ SCALAR_FEATURES = [
     ("attached_count", lambda r: float(r.get("attachment", {}).get("attached_count", 0) or 0)),
 ]
 
-# Physics v2 additions (physics_formulas_v2.py). Kept as a SEPARATE list
-# so the ViT can be run with and without them and the difference
-# attributed cleanly. The neck ratio is the one with a specific
-# hypothesis behind it: Frenkel/Kuczynski two-sphere theory predicts it
-# separates an early-stage neck (satellite on a host) from advanced
-# coalescence (bonded pair) — the largest measured confusion in the
-# frozen-scalar run.
+
 SCALAR_FEATURES_V2 = [
     ("v2_neck_to_radius", lambda r: (r.get("physics_v2") or {}).get("ratio_neck_to_radius")),
     ("v2_pair_diameter", lambda r: (r.get("physics_v2") or {}).get("ratio_pair_diameter")),
@@ -168,14 +96,7 @@ def _scalar_vector(record) -> list:
 
 def build_crop_tensors(records, crop_size: int = 224, verbose: bool = True,
                        square_crop: bool = False):
-    """
-    Loads each unique labeled crop ONCE, precomputes its 8 augmented
-    view tensors, and returns arrays aligned to the prototype records.
-
-    Returns (tensors, labels, groups, kept_index) where `kept_index`
-    maps back into `records` — a record whose source image can't be
-    read is dropped from all four, so nothing silently misaligns.
-    """
+                           
     by_path = {}
     tensors, labels, groups, kept_index, scalars = [], [], [], [], []
     missing = set()
@@ -222,26 +143,7 @@ def build_crop_tensors(records, crop_size: int = 224, verbose: bool = True,
 # ============================================================
 
 class DINOv2ClassifierHead(nn.Module):
-    """
-    DINOv2 backbone (partially unfrozen) + linear classification head,
-    optionally with physical scalars concatenated before the head.
-
-    WHY THE SCALARS ARE NEEDED
-        Crops are letterboxed to a square and resized to 224x224 before
-        they reach the network, which normalizes away ABSOLUTE SIZE: a
-        25 um sphere and a 40 um sphere arrive as pixel-identical
-        images. Several classes in this taxonomy are separated mainly
-        by calibrated size and by whether the particle is attached to a
-        host — exactly the information that normalization discards.
-        Measured on the frozen run, the two largest error sources were
-        Bonded <-> Molten Satellite and Perfect -> Oversized Sphere,
-        both size-separated pairs.
-
-        Feeding size and attachment evidence in alongside the visual
-        embedding restores that channel without giving the model
-        anything it could not legitimately measure from the image plus
-        its scale calibration.
-    """
+   
 
     def __init__(self, n_classes: int, model_name: str = DEFAULT_MODEL,
                  n_unfrozen_blocks: int = 4, dropout: float = 0.2,
@@ -251,11 +153,6 @@ class DINOv2ClassifierHead(nn.Module):
         self.n_scalar = n_scalar
         self.backbone, embed_dim = load_dinov2_model(model_name, device)
 
-        # Freeze everything, then re-enable only the last N blocks and
-        # the final norm. Freezing first and selectively unfreezing (as
-        # opposed to the reverse) means a backbone whose block count
-        # differs from what we assume fails safe — fully frozen — rather
-        # than silently training more than intended.
         for param in self.backbone.parameters():
             param.requires_grad = False
 
@@ -314,10 +211,7 @@ def _train_one_fold(tensors, y_idx, groups, train_idx, n_classes, device, scalar
         inner_val = train_idx[val_mask]
         inner_tr = train_idx[~val_mask]
 
-    # Standardize the scalars using TRAINING-FOLD statistics only. Using
-    # whole-dataset mean/std would let the held-out particles influence
-    # the transform applied to themselves — small, but exactly the kind
-    # of leak that inflates a cross-validated score.
+
     n_scalar = 0
     scal_t = None
     if scalars is not None and scalars.size:
@@ -337,10 +231,7 @@ def _train_one_fold(tensors, y_idx, groups, train_idx, n_classes, device, scalar
         n_scalar=n_scalar,
     ).to(device)
 
-    # Backbone gets a much smaller learning rate than the fresh head:
-    # the pretrained weights are already good and only need nudging,
-    # while the head starts from random init and must move fast. One
-    # shared rate would either wreck the backbone or starve the head.
+  
     backbone_params = [p for p in model.backbone.parameters() if p.requires_grad]
     opt = torch.optim.AdamW([
         {"params": backbone_params, "lr": lr},
@@ -417,13 +308,7 @@ def cross_validated_vit(records, n_folds: int = 5, *,
                         crop_size: int = 224, random_state: int = 42,
                         verbose: bool = True, square_crop: bool = False,
                         use_scalars: bool = True, use_v2_scalars: bool = False):
-    """
-    Group-aware cross-validated evaluation of the fine-tuned ViT.
 
-    Returns (y_true_labels, y_pred_labels) as string class labels, so
-    the caller can compute exactly the same metrics as every other
-    model without knowing anything about the encoding used here.
-    """
     global _ACTIVE_SCALARS
     _ACTIVE_SCALARS = list(SCALAR_FEATURES) + (list(SCALAR_FEATURES_V2) if use_v2_scalars else [])
 
