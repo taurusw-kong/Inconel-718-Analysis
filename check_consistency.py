@@ -4,7 +4,7 @@ ParticleVision V4
 
 Intra-Annotator Consistency Check
 
-Measures how consistently YOU label the same particles — the single
+Measures how consistently the label of same particles, the single
 most useful number to have before investing weeks in more labeling,
 because it is the practical ceiling on classifier accuracy. If you
 only agree with yourself 60% of the time, no model trained on those
