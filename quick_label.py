@@ -2,34 +2,7 @@
 ParticleVision V4
 =================
 
-Fast Bulk Labeling (verify-don't-choose)
-
-The fastest honest way to grow a labeled set. Instead of looking at
-one particle at a time and picking from 8 classes (slow: one decision
-per particle), the trained classifier pre-sorts every segmented
-particle by its predicted class and shows you a GRID of them all
-claiming to be the same thing. You click only the ones that are
-WRONG. Confirming 24 correct particles becomes one glance instead of
-24 decisions.
-
-Wrong ones go to a quick second pass where you assign the real class
-(or discard them). Everything you confirm or correct is written out
-as new prototype crops in the same Defects/<Class>/ folder layout
-build_prototypes.py already reads, so growing the training set is
-just: run this -> rebuild prototypes -> retrain.
-
-This is standard human-in-the-loop labeling, NOT circular training:
-the model only decides the ORDER and grouping you review in; every
-label that lands in the dataset is one you personally accepted. The
-model never labels its own training data unsupervised.
-
-Ordering: particles are shown lowest-confidence-first by default
-(--order uncertain). Low-confidence particles are the ones the model
-is actually learning nothing from right now, so a label there is
-worth several labels on cases it already gets right. Use
---order confident to instead confirm easy cases in bulk when you just
-want to grow raw class counts quickly.
-
+F
 Usage:
     python quick_label.py \\
         --output_dir /path/to/output \\
@@ -69,18 +42,7 @@ MIN_CONTEXT_PX = 120
 # ============================================================
 
 def crop_with_context(image_rgb, bbox_x, bbox_y, bbox_w, bbox_h):
-    """
-    Crop around a particle with enough surrounding context to judge it
-    — a tightly-cropped satellite is impossible to classify, since
-    "attached to a host" is literally what defines it. Guarantees a
-    minimum window size regardless of how small the particle is.
-
-    Returns (clean, marked). `marked` has a thin box around the
-    particle being judged (there are usually neighbors in frame) and
-    is for DISPLAY ONLY; `clean` is what gets saved as a training
-    example. Saving the marked version would teach the model to
-    recognize the marker rectangle instead of the particle itself.
-    """
+   
 
     h, w = image_rgb.shape[:2]
 
@@ -261,11 +223,7 @@ class QuickLabeler(tk.Tk):
 
             for widget in (cell, label, confidence_label):
                 widget.bind("<Button-1>", lambda _e, idx=i, c=cell: self.toggle(idx, c))
-                # Right-click / double-click open the large detail view.
-                # A 205px thumbnail is enough to triage most particles
-                # but not to settle a genuinely ambiguous one — without
-                # a way to look closer, the honest answer is "I can't
-                # tell", which produces bad labels.
+            
                 widget.bind("<Button-2>", lambda _e, it=item: self.show_detail(it))
                 widget.bind("<Button-3>", lambda _e, it=item: self.show_detail(it))
                 widget.bind("<Double-Button-1>", lambda _e, it=item: self.show_detail(it))
@@ -283,14 +241,7 @@ class QuickLabeler(tk.Tk):
             cell.configure(bg="#e34948", relief="solid")
 
     def show_detail(self, item):
-        """
-        Large view of one particle: the zoomed crop beside the FULL
-        SEM image with this particle boxed, so its size and
-        surroundings relative to the whole field are visible — which
-        is what actually decides attachment-defined and size-defined
-        classes.
-        """
-
+        
         window = tk.Toplevel(self)
         window.title(
             f"{item['image_name']}  ·  particle {item['particle_id']}  ·  "
@@ -331,8 +282,6 @@ class QuickLabeler(tk.Tk):
         full_photo = ImageTk.PhotoImage(full_image)
         tk.Label(right, image=full_photo, bd=0).pack(anchor="w", pady=(6, 0))
 
-        # Tk drops images that only the C layer references — keep both
-        # alive on the window object for as long as it exists.
         window._photos = (big_photo, full_photo)
 
         ttk.Button(window, text="Close", command=window.destroy).pack(pady=(0, 10))
@@ -340,11 +289,7 @@ class QuickLabeler(tk.Tk):
 
     def commit_page(self):
 
-        # Bounds guard: the buttons stay live while the reassignment
-        # popup is open and after the final page is committed, so this
-        # could be re-entered with page_index already past the end —
-        # which crashed with IndexError mid-session (confirmed in a
-        # real labeling run) instead of finishing cleanly.
+      
         if self.page_index >= len(self.pages):
             self.finish()
             return
@@ -380,10 +325,6 @@ class QuickLabeler(tk.Tk):
         window.title("What are these actually?")
         window.geometry("900x900")
 
-        # Modal — without this the main window's "Confirm rest &
-        # continue" button stays clickable underneath, advancing
-        # page_index a second time behind the popup and desynchronizing
-        # the page state.
         window.transient(self)
         window.grab_set()
 
@@ -441,21 +382,7 @@ class QuickLabeler(tk.Tk):
         show()
 
     def _class_folder(self, class_name):
-        """
-        The EXISTING folder that build_prototypes.py already reads for
-        this class, found with the same alias resolution the read path
-        uses (resolve_class_folder_name) — not a name guessed from the
-        class string.
-
-        Guessing was a real bug: it tried only `class_name` with
-        underscores swapped for spaces, so for a user folder named
-        "Clip-Cap" (hyphen) or "Perfect Sphere" (different word) it
-        found nothing and created a SECOND parallel folder
-        ("Clip_Cap", "Perfect_Spherical"). No data was lost — the
-        resolver maps both to one class on read — but it left
-        confusing duplicate folders on disk.
-        """
-
+   
         for entry in sorted(os.listdir(self.examples_dir)):
 
             path = os.path.join(self.examples_dir, entry)
@@ -463,7 +390,7 @@ class QuickLabeler(tk.Tk):
             if os.path.isdir(path) and resolve_class_folder_name(entry) == class_name:
                 return path
 
-        # Genuinely no folder for this class yet — create a canonical one.
+       
         path = os.path.join(self.examples_dir, class_name)
         os.makedirs(path, exist_ok=True)
         return path
@@ -477,9 +404,6 @@ class QuickLabeler(tk.Tk):
         filename = f"auto_{base}_p{item['particle_id']}.png"
         path = os.path.join(folder, filename)
 
-        # The CLEAN crop, never the marked one shown in the grid — a
-        # training crop must contain nothing but real image data, or
-        # the model would learn to recognize the marker rectangle.
         cv2.imwrite(path, cv2.cvtColor(item["clean_crop"], cv2.COLOR_RGB2BGR))
 
         self.saved_count += 1
