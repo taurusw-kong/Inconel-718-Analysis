@@ -6,49 +6,31 @@ Unified Classification
 
 Trains and compares TWO model families on the SAME fused feature
 vector (feature_fusion.py) against the SAME prototype-labeled set, for
-ALL 10 classes uniformly — no class gets a different method:
+ALL 10 classes uniformly, no class gets a different method:
 
 - Gradient-Boosted Trees (XGBoost)
 - Prototype-based Few-Shot (k-nearest labeled example, by distance in
   the fused feature space)
 
 Evaluation uses out-of-fold cross-validated predictions (not a single
-train/test split) — the prototype set is small (tens of examples per
+train/test split), the prototype set is small (tens of examples per
 class), so a one-shot split would be high-variance and easy to
-over-read; cross-validation uses every example as a held-out test case
+over-read. cross-validation uses every example as a held-out test case
 exactly once, which is the standard, defensible way to report accuracy
 on a dataset this size.
 
 The deployed model (used for actual predictions on production
-particles) is refit on the FULL prototype set after evaluation — CV
+particles) is refit on the FULL prototype set after evaluation, CV
 folds are for honest metrics, not the final classifier.
 """
 
 from __future__ import annotations
 
 import os
-
-# torch and xgboost each bundle their own OpenMP runtime. Running both
-# in the same process — this pipeline needs DINOv2 (torch) embeddings
-# AND an XGBoost classifier together — reliably SEGFAULTS on macOS the
-# first time xgboost actually trains or loads/infers after torch has
-# run a real forward pass. Reproduced directly; neither import order
-# nor torch.set_num_threads(1) alone fixes it (both still tried).
-# OMP_NUM_THREADS=1 set BEFORE either library initializes does fix it
-# — but only if it's set before the *first* import of torch or
-# xgboost anywhere in the process, since OpenMP reads it at library
-# load time. This must be the first thing in every entrypoint
-# (main.py, gui_app.py, build_prototypes.py) — setting it here alone
-# is not sufficient if something else imports torch first.
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import xgboost
 from xgboost import XGBClassifier
-
-# LightGBM and CatBoost complete the gradient-boosted-tree family the
-# manuscript's Section 4.8.1 names. Imported defensively: neither is
-# required for the pipeline to run, and a missing one should drop that
-# model from the comparison rather than break the whole classifier.
 try:
     from lightgbm import LGBMClassifier
 except ImportError:
@@ -61,8 +43,8 @@ except ImportError:
 
 # TabPFN (Section 4.8.2) runs as a HOSTED SERVICE: fitting uploads the
 # fused feature vectors to Prior Labs' API. It is therefore strictly
-# opt-in — enabled only when TABPFN_TOKEN is present in the environment
-# — so a normal pipeline run never sends this project's data off the
+# opt-in, enabled only when TABPFN_TOKEN is present in the environment
+# so a normal pipeline run never sends this project's data off the
 # machine by default, and never needs network access to succeed.
 try:
     from tabpfn_client import TabPFNClassifier as _TabPFNCloudClassifier
@@ -110,10 +92,7 @@ MODEL_KNN = "knn"
 MODEL_SVM = "svm_rbf"
 MODEL_MLP = "mlp"
 
-# shap.TreeExplainer works natively on any of these — explainability.py
-# uses this set to decide which predictions get SHAP feature
-# attribution vs. no per-particle explanation (SVM/LogReg/KNN/MLP
-# would need the much slower KernelExplainer, not done here).
+
 TREE_MODEL_NAMES = {MODEL_XGBOOST, MODEL_LIGHTGBM, MODEL_CATBOOST,
                     MODEL_RANDOM_FOREST, MODEL_EXTRA_TREES, MODEL_GRADIENT_BOOSTING}
 
@@ -131,8 +110,7 @@ def _fresh_sklearn_models(random_state: int) -> dict:
         # Hyperparameters below are the result of a real
         # RandomizedSearchCV pass (25 iterations) over this project's
         # actual labeled prototype set, using the SAME group-aware CV
-        # as everywhere else (no leakage) — chosen because they scored
-        # best (38.2% vs. 36.0% for the untuned defaults), not guessed.
+        # as everywhere else (no leakage).
         MODEL_XGBOOST: XGBClassifier(
             n_estimators=200, max_depth=8, learning_rate=0.1,
             subsample=0.6, colsample_bytree=0.6,
@@ -162,20 +140,10 @@ def _fresh_sklearn_models(random_state: int) -> dict:
             early_stopping=True, random_state=random_state,
         ),
     }
-
-    # Both are matched to XGBoost's tuned depth/rate/subsample settings
-    # rather than left at their own library defaults, so the three-way
-    # gradient-boosting comparison in Section 4.8.1 isolates the
-    # *implementation* (leaf-wise vs. level-wise growth, ordered vs.
-    # standard boosting) instead of measuring who happened to ship the
-    # better defaults for this dataset shape.
     if LGBMClassifier is not None:
         models[MODEL_LIGHTGBM] = LGBMClassifier(
             n_estimators=200, max_depth=8, learning_rate=0.1,
             subsample=0.6, colsample_bytree=0.6, subsample_freq=1,
-            # min_child_samples defaults to 20, which on a set this small
-            # silently prunes most splits away and collapses the model
-            # toward predicting the majority class.
             min_child_samples=5,
             random_state=random_state, n_jobs=1, verbose=-1,
         )
@@ -195,9 +163,6 @@ def _fresh_sklearn_models(random_state: int) -> dict:
     if _TabPFNCloudClassifier is not None and token:
         import tabpfn_client
         tabpfn_client.set_access_token(token)
-        # n_estimators=8 keeps the number of billed API round-trips per
-        # CV fold bounded; the default ensemble size multiplies request
-        # count without meaningfully changing accuracy at this data size.
         models[MODEL_TABPFN] = _TabPFNCloudClassifier(n_estimators=8)
 
     return models
@@ -256,7 +221,7 @@ class PrototypeFewShotClassifier:
         neighbor_labels = self.y_[idx]
 
         # Inverse-distance-weighted vote (a tied/very close neighbor
-        # counts for more than a far one) — a small epsilon avoids
+        # counts for more than a far one), a small epsilon avoids
         # division by zero for an exact match.
         weights = 1.0 / (distances + 1e-6)
 
@@ -298,20 +263,9 @@ def _safe_cv_folds(y: np.ndarray, groups: np.ndarray, requested: int) -> int:
 
 def _cross_validated_predictions(X: np.ndarray, y_encoded: np.ndarray, groups: np.ndarray, model_name: str, n_folds: int, random_state: int):
 
-    # StratifiedGroupKFold — NOT plain StratifiedKFold — is required
-    # once augmented rotated/flipped views exist: several rows can
-    # trace back to the SAME real labeled particle
-    # (feature_fusion.prototypes_to_frame's group_ids), and letting
-    # augmented siblings land in both the train and test fold would be
-    # leakage (the model could "recognize" a rotated copy of an
-    # example it already saw), not genuine held-out accuracy.
     skf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=random_state)
 
     if model_name == MODEL_PROTOTYPE:
-
-        # PrototypeFewShotClassifier isn't a full sklearn estimator
-        # (no get_params/set_params needed for our use), so fold it by
-        # hand rather than dragging in sklearn's estimator machinery.
         predictions = np.empty_like(y_encoded)
 
         for train_idx, test_idx in skf.split(X, y_encoded, groups):
@@ -322,13 +276,6 @@ def _cross_validated_predictions(X: np.ndarray, y_encoded: np.ndarray, groups: n
         return predictions
 
     if model_name == MODEL_FT_TRANSFORMER:
-
-        # Also folded by hand, for a different reason: this model needs
-        # the training fold's `groups` passed into fit() so its internal
-        # early-stopping split can hold out whole source particles.
-        # cross_val_predict has no way to forward per-fold groups into a
-        # fit call, and a random inner split silently mis-stops the model
-        # (see ft_transformer.py's note) — so the loop is explicit here.
         from ft_transformer import FTTransformerClassifier
 
         predictions = np.empty_like(y_encoded)
@@ -351,20 +298,16 @@ def late_fusion_cross_validated_accuracy(
     """
     Real, honest test of late fusion vs. the early-fusion default:
     fits TWO separate XGBoost models per fold — one on DINOv2
-    embeddings alone, one on physics/morphology alone — and averages
+    embeddings alone, one on physics/morphology alone, and averages
     their predicted class probabilities, rather than concatenating
     both feature groups into one vector for a single model to learn
-    over (early fusion, what every other model in this file does).
+    over.
 
     Late fusion can win when one feature group is much noisier than
     the other, since early fusion lets a noisy group's irrelevant
     variance dilute the clean group's signal inside one shared
-    decision boundary; late fusion never lets that happen because each
+    decision boundary, late fusion never lets that happen because each
     submodel only ever sees its own feature group.
-
-    Uses the SAME StratifiedGroupKFold splits as every other model
-    here (`random_state` fixed) so the comparison is apples-to-apples,
-    not an artifact of different folds landing differently.
     """
 
     skf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=random_state)
@@ -397,11 +340,6 @@ def late_fusion_cross_validated_accuracy(
 
         scalar_model.fit(X_scalar_train, y_encoded[train_idx])
         embed_model.fit(X_embed_train, y_encoded[train_idx])
-
-        # Simple averaging of predicted probabilities — the standard
-        # late-fusion baseline. Both submodels see the SAME class set
-        # (fit on the same y_encoded), so their probability columns
-        # already align without extra bookkeeping.
         combined_proba = (scalar_model.predict_proba(X_scalar_test) + embed_model.predict_proba(X_embed_test)) / 2.0
 
         predictions[test_idx] = np.argmax(combined_proba, axis=1)
@@ -447,11 +385,6 @@ def train_and_compare(prototype_records: List[dict], output_dir: str) -> dict:
 
     label_encoder = LabelEncoder()
     y_encoded = label_encoder.fit_transform(labels)
-
-    # Real (pre-augmentation) example counts per class — counting raw
-    # rows here would hide a genuinely thin class behind its augmented
-    # view count (e.g. 5 real Spatter_Derived crops x 8 views = 40
-    # rows, but still only 5 independent examples).
     real_counts = pd.DataFrame({"label": labels, "group": groups}).drop_duplicates("group")["label"].value_counts()
     low_classes = real_counts[real_counts < config.CLASSIFICATION.min_prototype_examples]
     if len(low_classes):
@@ -489,7 +422,7 @@ def train_and_compare(prototype_records: List[dict], output_dir: str) -> dict:
     ordered_classes = [c for c in config.DEFECT_TAXONOMY if c in label_encoder.classes_]
 
     # Per-class metrics AND a confusion matrix for EVERY model, not
-    # just the best one — lets Results show a full model-by-model
+    # just the best one, lets Results show a full model-by-model
     # comparison (confusion matrix per model), not just a single
     # winner's.
     per_class_frames = []
@@ -513,14 +446,6 @@ def train_and_compare(prototype_records: List[dict], output_dir: str) -> dict:
 
     per_class_df = pd.concat(per_class_frames, ignore_index=True)
     confusion_df = confusion_matrices[best_model_name]
-
-    # Quantification correction matrix, built from the BEST model's
-    # out-of-fold (held-out) predictions — never from a training fit,
-    # which would understate the real error rate and bias the
-    # correction in the same optimistic direction. This is what lets
-    # population proportions be estimated accurately for reusability
-    # analysis despite imperfect per-particle accuracy (see
-    # quantification.py).
     correction_matrix = build_correction_matrix(
         labels,
         label_encoder.inverse_transform(oof_predictions[best_model_name]),
@@ -553,15 +478,10 @@ def train_and_compare(prototype_records: List[dict], output_dir: str) -> dict:
     ablation_df = pd.DataFrame(ablation_rows)
 
     # ---------------- refit ALL models on the full prototype set ----------------
-    # CV folds above are for honest metrics; every model gets refit on
+    # CV folds above are for honest metrics, every model gets refit on
     # 100% of the data here for actual deployment/inference.
 
     fitted_models = {MODEL_PROTOTYPE: PrototypeFewShotClassifier(k=config.ML.prototype_k).fit(X, y_encoded)}
-
-    # Refit here too, not just in CV — otherwise a run where the
-    # FT-Transformer wins would KeyError when the best model is looked
-    # up for deployment. Groups are passed so its internal early-stopping
-    # split stays group-aware on the full set as well.
     from ft_transformer import FTTransformerClassifier
     fitted_models[MODEL_FT_TRANSFORMER] = FTTransformerClassifier(
         random_state=config.ML.random_state).fit(X, y_encoded, groups=groups)
@@ -569,9 +489,6 @@ def train_and_compare(prototype_records: List[dict], output_dir: str) -> dict:
     for model_name, model in _fresh_sklearn_models(config.ML.random_state).items():
         model.fit(X, y_encoded)
         fitted_models[model_name] = model
-
-    # Feature importance from every tree model that exposes it —
-    # separate CSVs so Results can chart each one.
     feature_importance_frames = []
 
     for model_name in TREE_MODEL_NAMES:
@@ -655,24 +572,6 @@ def load_classifier(output_dir: str):
 
 
 def classify_particles(particles: List[Particle], classifier: dict, model_name: str = None) -> List[Particle]:
-    """
-    Predicts every particle's class using `model_name` (defaults to
-    the cross-validated best model). Sets particle.prediction in
-    place. Confidence is the winning class's predicted probability
-    (XGBoost) or vote share (prototype few-shot) — both on a
-    comparable [0,1] scale.
-
-    Particles flagged by segmentation as border-truncated (see
-    segmentation.estimate_border_truncation) are routed to the
-    BORDER_TRUNCATED_LABEL sentinel instead of the model — a
-    significantly cut-off particle can't be reliably typed even by
-    eye, so forcing it through the classifier would just produce a
-    confident-looking wrong answer. They still get a PredictionResult
-    (so features.csv/the overlay always has a label to show), just not
-    one of the 8 real defect classes, and they're excluded downstream
-    from classification metrics, quantification, and reusability
-    composition — see main.py/reusability.py.
-    """
 
     model_name = model_name or classifier["best_model_name"]
 
