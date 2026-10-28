@@ -252,21 +252,7 @@ def read_scale_bar_with_ocr(
 # ============================================================
 
 def measure_scale_bar_px(image_bgr, strip_search_px=90, min_bar_px=20):
-    """
-    Measures the burned-in scale bar's length in pixels by finding the
-    longest solid horizontal run of white in the microscope info strip
-    at the bottom of the frame. No OCR involved — the BAR is a
-    geometric feature, and only its LABEL ("10um") is text, which the
-    caller supplies as a known constant.
-
-    This exists because the OCR-based calibration path proved
-    unreliable on this project's real images: on one it returned
-    0.96 um/px when the true value was 0.10 (a ~10x error that silently
-    corrupted every size measurement and all three physics formulas),
-    and on another it failed outright and returned nothing, leaving
-    particles with no size at all. Measuring the bar directly agrees
-    with the independent FOV-based calculation to within 1%.
-    """
+  
 
     h, w = image_bgr.shape[:2]
 
@@ -315,28 +301,7 @@ def calibration_from_scale_bar(image_bgr, scale_bar_um=10.0):
 
 
 def parse_jeol_sidecar_calibration(image_path):
-    """
-    JEOL's SEM control software writes a `.txt` sidecar next to every
-    captured image (same basename — `15.bmp` -> `15.txt`) recording
-    the actual acquisition parameters, including the real field-of-
-    view width/height in microns ($CM_FIELD_OF_VIEW) and the image's
-    pixel dimensions ($CM_IMAGE_SIZE). This is the single most
-    authoritative calibration source available — it's not measured or
-    estimated from the image at all, it's what the instrument itself
-    recorded at capture time.
-
-    Also cross-checks against the sidecar's independent scale-bar spec
-    ($SM_MICRON_MARKER label vs. $SM_MICRON_BAR length in pixels) and
-    logs a warning if the two disagree by more than 2% — they should
-    always agree exactly for a correctly configured microscope, so a
-    mismatch would mean something is wrong with either this file or
-    the assumption that follows from it.
-
-    Returns None (falls through to the next calibration source) if no
-    matching sidecar exists or it can't be parsed — this is an
-    optional enhancement, not a required file.
-    """
-
+ 
     base, _ = os.path.splitext(str(image_path))
     sidecar_path = base + ".txt"
 
@@ -399,15 +364,7 @@ def calibration_from_fov_width(
     fov_width_um,
 
 ):
-    """
-    The simplest, most robust calibration source of all: microscope
-    info bars burn in the field-of-view width in real units (e.g.
-    "FOV:128x96um"). If you tell us that one number, microns-per-pixel
-    is just fov_width_um / image_pixel_width — no OCR, no scale-bar
-    detection, no CSV file to author by hand. Assumes every image in
-    the batch was captured at the same magnification/FOV, which is
-    the normal case for a single imaging session.
-    """
+ 
 
     image_width_px = image_bgr.shape[1]
 
@@ -444,27 +401,7 @@ def get_calibration(
     image_path=None,
 
 ):
-    """
-    Calibration sources, most-trusted first:
-
-      1. manual per-image CSV (you stated it explicitly)
-      2. JEOL .txt sidecar (the instrument's own recorded FOV/pixel
-         size — not measured or estimated at all, see
-         parse_jeol_sidecar_calibration)
-      3. field-of-view width (you stated it explicitly, one value for
-         the whole batch)
-      4. measured scale bar + its known label (geometry, no OCR)
-      5. OCR of the info bar  — LAST RESORT, see warning below
-      6. the supplied default
-
-    The OCR path is deliberately demoted below direct measurement: on
-    this project's real images it once returned 0.96 um/px where the
-    true value was 0.10, a ~10x error that silently propagated into
-    every particle size and all three physics equations before anyone
-    noticed. Anything that states or measures the scale directly is
-    preferred over reading text.
-    """
-
+  
     if image_name in manual_calibration:
 
         return manual_calibration[image_name]
@@ -513,9 +450,7 @@ def get_calibration(
 
     if default_microns_per_pixel is None:
 
-        # Loud, not silent. Previously this returned None quietly, and
-        # every downstream size/physics feature became NaN for that
-        # image without anything in the log saying so.
+ 
         logger.warning(
             f"{image_name}: NO CALIBRATION FOUND — particle sizes and all "
             "physics features will be missing for this image. Supply "
@@ -548,25 +483,7 @@ def detect_information_strip(
     zero_fraction_threshold=0.30,
 
 ):
-    """
-    Finds where the microscope's info bar starts by looking for
-    fully-black pixels, not just "low variance" rows.
-
-    Real SEM image content — background or particle surface — never
-    has exactly-zero pixels; ordinary sensor noise means every row has
-    at least *some* spread. A solid-black info bar background does
-    the opposite: even its densest text row is still overwhelmingly
-    pure-black pixels (white text covers a small fraction of any given
-    row). So the fraction of near-zero pixels in a row cleanly
-    separates "real image" (~0%) from "info bar, including text rows"
-    (usually 60-100%) — and unlike a simple variance threshold, this
-    doesn't get fooled by the dark gap *between* two lines of text
-    inside the bar (both the gap and the text rows score high here).
-
-    Empirically validated against real JEOL SED output (two-line info
-    bar: readouts + scale bar on one line, FOV/date on the next) —
-    exact match against the true, manually-verified boundary.
-    """
+ 
 
     gray = cv2.cvtColor(
 
@@ -598,10 +515,7 @@ def detect_information_strip(
 
     if strip_start is None:
 
-        # The entire search window looks like the bar (or the image
-        # has no info bar at all and just happens to have a dark
-        # bottom edge) -- fall back to the old conservative default
-        # rather than cropping too aggressively.
+   
         return int(
 
             h * 0.08
@@ -848,17 +762,7 @@ class ImagePreprocessor:
 
         self.strip_fraction = strip_fraction
 
-        # Manual override — if set, always wins over both the
-        # heuristic detector and the fallback fraction. Most
-        # microscope software (JEOL etc.) burns in an info bar of a
-        # *fixed* pixel height for a given resolution/settings, so
-        # measuring it once (open any image in an editor, note the
-        # y-coordinate where the black bar starts) and setting it
-        # here is far more reliable than auto-detection, which can
-        # under-crop on info bars that are mostly uniform black with
-        # only thin white text (low row-to-row variance almost
-        # everywhere, which is exactly what the auto-detector looks
-        # for to find the boundary).
+
         self.strip_height_px = strip_height_px
 
     def process(
@@ -933,13 +837,7 @@ class ImagePreprocessor:
 
             stats.strip_height = strip_height
 
-        # Keep a copy of the strip-cropped image BEFORE any contrast
-        # enhancement. Enhancement (CLAHE especially) can stretch a
-        # genuinely near-black background's brightness/texture enough
-        # to fool a brightness-based background-vs-particle check
-        # downstream in segmentation — so that check should compare
-        # against these raw, physically-meaningful pixel values
-        # instead of the enhanced ones.
+    
         raw_rgb = image_rgb.copy()
 
         if self.enhancement == "clahe":
