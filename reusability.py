@@ -10,10 +10,8 @@ This is a *self-derived* composite index (not a published/validated
 standard) meant to give a single, defensible 0-100 number for "how
 reusable is this powder lot for another AM build", built entirely out
 of quantities this pipeline already measures. It is designed to be
-transparent and re-derivable — every term below is explained, and all
-three weights (alpha, beta, gamma) live in `config.REUSABILITY` so you
-can run a sensitivity analysis, which a reviewer will expect if you
-present a self-derived index in a paper.
+transparent and re-derivable, every term below is explained, and all
+three weights (alpha, beta, gamma) live in `config.REUSABILITY`.
 
 Terms
 -----
@@ -23,10 +21,7 @@ D_severity (0-100, per particle)
     classes (config.DEFECT_SEVERITY) reflecting the AM literature's
     general consensus on what hurts flowability/packing/melt-pool
     stability most (e.g. large agglomerates and splats are worse than
-    a single oversized-but-round particle). *You should recalibrate
-    these weights against your own flowability (Hall/Carney flow) or
-    porosity data before treating the resulting score as quantitative*
-    — see the docstring in config.py.
+    a single oversized-but-round particle). 
 
 delta_PSD (0-100, one value per batch, shared by all particles in it)
     Normalised deviation of the *measured* particle-size distribution
@@ -35,8 +30,7 @@ delta_PSD (0-100, one value per batch, shared by all particles in it)
     captures "spec creep" — a lot dominated by fines or coarse
     particles is less reusable even if every individual particle looks
     geometrically fine. If no reference PSD is supplied, this term is
-    0 for every particle (i.e. the score falls back to a purely
-    per-particle geometric assessment) and a warning is attached to
+    0 for every particle and a warning is attached to
     the batch summary.
 
 O_surface (0-100, per particle)
@@ -48,9 +42,6 @@ O_surface (0-100, per particle)
     THIS batch", which is what matters for a reuse decision on a
     specific powder lot.
 
-The final score is clipped to [0, 100]. A batch-level summary
-(mean, distribution, class-wise breakdown) is also produced so it can
-be dropped straight into a results table/figure.
 """
 
 from __future__ import annotations
@@ -183,17 +174,7 @@ class ReusabilityScorer:
     # --------------------------------------------------------
 
     def score_dataframe(self, particle_df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Score an entire particle table (as produced by
-        `ParticleVisionPipeline.dataframe` / `main.py`). Adds columns:
-
-            D_severity, O_surface, delta_PSD, reusability_score
-
-        Batch grouping is by `image_name` if present (i.e. delta_PSD
-        and the O_surface percentile ranks are computed per-image),
-        otherwise over the whole table.
-        """
-
+   
         df = particle_df.copy()
 
         if "image_name" in df.columns:
@@ -259,16 +240,7 @@ class ReusabilityScorer:
 
             group["reusability_score"] = score.clip(lower=0.0, upper=100.0)
 
-            # Border-truncated particles (see
-            # segmentation.estimate_border_truncation /
-            # config.BORDER_TRUNCATED_LABEL) have no real defect
-            # classification, so D_severity=0 for them is an artifact
-            # of confidence=0, not a genuine "perfect" reading — giving
-            # them a reusability_score would silently pull the batch
-            # mean toward 100. NaN them out here so every downstream
-            # aggregate (.mean()/.median()/.std(), all pandas-default
-            # NaN-skipping) excludes them automatically without special
-            # casing at every call site.
+           
             if "border_truncated" in group.columns:
                 truncated_mask = group["border_truncated"].astype(bool)
                 group.loc[truncated_mask, ["D_severity", "O_surface", "reusability_score"]] = np.nan
@@ -307,11 +279,7 @@ class ReusabilityScorer:
 
             row = {
                 "image_name": image_name,
-                # Honest, auditable count split — see
-                # segmentation.estimate_border_truncation. n_particles
-                # is every mask this image produced; n_classified is
-                # what composition/reusability stats below are actually
-                # computed over.
+             
                 "n_particles": len(group),
                 "n_classified": len(classified),
                 "n_border_truncated": int(truncated_mask.sum()),
@@ -324,10 +292,7 @@ class ReusabilityScorer:
                 else False,
             }
 
-            # Composition fractions are computed over CLASSIFIED
-            # particles only — a border-truncated particle isn't a
-            # defect type, so it must not dilute the real class
-            # proportions the reusability narrative is built on.
+     
             if "defect_label" in classified.columns and len(classified):
                 fractions = (
                     classified["defect_label"].value_counts(normalize=True) * 100.0
