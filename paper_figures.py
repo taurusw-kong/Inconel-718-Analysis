@@ -2,42 +2,8 @@
 """
 ParticleVision V4 — Publication Figure Generator
 ================================================
-
 Standalone, dependency-light generator for the *non-traditional* journal
-figures (Sankey, chord, bump, dumbbell, parallel coordinates). You point it
-at a CSV, it writes an SVG (always) and a PNG (if cairosvg is available).
-
-Nothing here invents data: every value plotted comes from the CSV you pass.
-
-USAGE
------
-    python3 paper_figures.py sankey   --features features.csv \
-                                      --reusability features_with_reusability.csv
-    python3 paper_figures.py chord    --csv classifier/confusion_matrix.csv
-    python3 paper_figures.py bump     --csv classifier/model_comparison.csv
-    python3 paper_figures.py dumbbell --csv classifier/ablation.csv
-    python3 paper_figures.py parallel --csv features.csv
-    python3 paper_figures.py all      --dir output
-
-Options common to every chart:
-    --out NAME     output basename (default: fig_<chart>)
-    --outdir DIR   where to write (default: ./paper_figures)
-    --scale N      PNG pixel scale factor (default 2 => ~2x the SVG viewBox)
-
-WHICH CSV FEEDS WHICH FIGURE  (paths relative to your output/ directory)
------------------------------------------------------------------------
-    sankey    features.csv  +  features_with_reusability.csv
-    chord     classifier/confusion_matrix.csv
-    bump      classifier/model_comparison.csv
-    dumbbell  classifier/ablation.csv
-    parallel  features.csv
-
-PNG RENDERING
--------------
-SVG is written with the standard library alone. PNG additionally needs:
-    brew install cairo
-    pip3 install cairosvg
-If cairosvg is missing the script still writes the SVG and tells you so.
+figures (Sankey, chord, bump, dumbbell, parallel coordinates). 
 """
 
 from __future__ import annotations
@@ -49,10 +15,6 @@ import os
 import sys
 from collections import defaultdict
 
-# The first five charts are pure stdlib. The statistical ones (contour,
-# beeswarm, SHAP, treemap) need numpy for density/quantile work; it is
-# already a hard dependency of the pipeline this reads output from, so
-# importing it here adds nothing new to install.
 import numpy as np
 
 
@@ -60,16 +22,6 @@ import numpy as np
 # THEME
 # ============================================================
 
-# ------------------------------------------------------------------
-# THEME
-# ------------------------------------------------------------------
-# Journals print on white and generally reject dark-background figures:
-# they consume ink, reproduce poorly in greyscale, and look out of place
-# beside typeset text. LIGHT is therefore the default; DARK remains for
-# screen use and presentations.
-#
-# The palette is unchanged between themes -- only the ground, ink and
-# gridlines swap -- so a figure keeps its identity across both.
 
 THEME = "light"
 
@@ -214,11 +166,7 @@ def write_out(svg_parts: list, basename: str, outdir: str, w: int, h: int, scale
 
 
 
-# Frame-truncated particles are detected but deliberately not classified,
-# because a partial outline gives unreliable morphology. They are reported
-# as a count in the text; including them in figures would add a category
-# that is an artefact of framing rather than a defect type, and would
-# dominate several charts at ~52% of detections.
+
 TRUNCATED_MODEL = "excluded_border_truncated"
 TRUNCATED_LABEL = "Edge_Truncated"
 
