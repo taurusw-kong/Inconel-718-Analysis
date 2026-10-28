@@ -1,41 +1,5 @@
 #!/usr/bin/env python3
-"""
-Consolidate everything the figures need into ONE tidy CSV.
-
-WHY
-    paper_figures.py currently reads six different files (features.csv,
-    prototypes.joblib, confusion_matrix.csv, model_comparison.csv,
-    ablation.csv, shap_explanations.csv) and re-runs t-SNE on every
-    call. That means regenerating a chart requires the whole pipeline
-    output to be present and re-does expensive work each time.
-
-    This script flattens all of it into master_data.csv once. After
-    that, plot_from_master.py needs nothing but that single file.
-
-FORMAT — long/tidy, because the sources have incompatible shapes
-    A per-particle table (thousands of rows x dozens of columns), an
-    8x8 confusion matrix, and a 13-row model table cannot share a wide
-    layout. Long format holds all of them losslessly:
-
-        block, entity, key, value
-
-        block   which dataset the row belongs to
-        entity  the row identity within that block
-        key     the column/field name
-        value   the cell (numeric or text, stored as text)
-
-    plot_from_master.py pivots each block back to its natural shape.
-
-    t-SNE coordinates are computed HERE and stored, so plotting is
-    instant and — more importantly — reproducible: every regenerated
-    contour plot uses the same projection instead of a fresh stochastic
-    one.
-
-USAGE
-    python3 build_master_csv.py --run_dir /path/to/output6 \
-                                --classifier_dir /path/to/output6 \
-                                --out master_data.csv
-"""
+""" Build a Master CSV for Later analysis"""
 
 from __future__ import annotations
 
@@ -45,10 +9,6 @@ import os
 import numpy as np
 import pandas as pd
 
-
-# Per-particle fields the charts actually consume. Kept to a short list
-# on purpose: dumping all ~90 morphology columns would inflate the file
-# several-fold for data no figure reads.
 PARTICLE_FIELDS = [
     "image_name", "defect_label", "prediction_model", "confidence",
     "size_um", "is_attached", "boundary_contact_fraction",
@@ -65,9 +25,6 @@ def rows_from_particles(run_dir, out):
         return
 
     df = pd.read_csv(feats)
-
-    # Reusability lives in a second file; merge it in so the plotting
-    # script never needs to know there were two.
     if os.path.exists(reuse):
         r = pd.read_csv(reuse)
         for col in ("reusability_score", "D_severity"):
@@ -96,7 +53,7 @@ def rows_from_matrix(path, block, out):
         for pred_c, v in r.items():
             out.append((block, str(true_c), str(pred_c), v))
 
-    # Record the row order explicitly. Pivoting the long form back sorts
+    # Pivoting the long form back sorts
     # entities alphabetically, which would silently re-order the chord
     # diagram's arcs away from the taxonomy order used everywhere else.
     for i, c in enumerate(df.index):
