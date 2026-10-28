@@ -39,7 +39,6 @@ import pandas as pd
 
 import config
 import main as pipeline
-import figures
 from utils import list_images, load_rgb
 
 
@@ -47,7 +46,7 @@ APP_TITLE = "ParticleVision V4"
 
 RESULTS_PANEL_SIZE = (6.6, 5.2)
 
-SURFACE_COLOR = (252, 252, 251)  # matches figures.py's SURFACE background
+SURFACE_COLOR = (252, 252, 251)
 
 REAL_PATH_DEFAULTS = {
     "input_dir": "SEM",
@@ -234,7 +233,7 @@ class ParticleVisionGUI(tk.Tk):
         ttk.Label(left, text="Run Pipeline", font=("", 15, "bold")).pack(anchor="w")
         ttk.Label(
             left,
-            text="One click: segment (SAM2) -> physics-constrained features -> DINOv2 -> classify -> reusability -> figures.",
+            text="One click: segment (SAM2) -> physics-constrained features -> DINOv2 -> classify -> reusability.",
             foreground="#6b6a66", wraplength=420, justify="left",
         ).pack(anchor="w", pady=(2, 12))
 
@@ -576,7 +575,7 @@ class ParticleVisionGUI(tk.Tk):
         self.results_tab_inner = inner
 
         ttk.Label(inner, text="Results", font=("", 15, "bold")).pack(anchor="w")
-        ttk.Label(inner, text="Every chart is also saved as a clean PNG (+ a companion _data.csv) in <output>/figures/.", foreground="#6b6a66").pack(anchor="w", pady=(2, 12))
+        ttk.Label(inner, text="Pipeline results are saved as CSV files in the output folder.", foreground="#6b6a66").pack(anchor="w", pady=(2, 12))
 
         self.results_status_label = ttk.Label(inner, text="Run the pipeline first.")
         self.results_status_label.pack(anchor="w")
@@ -599,10 +598,10 @@ class ParticleVisionGUI(tk.Tk):
             self.results_status_label.configure(text="No output folder set yet.")
             return
 
-        figs = figures.generate_report_figures(output_dir, save=True, close=True, figsize=RESULTS_PANEL_SIZE)
+        figs = {}  # chart generation is not part of this release
 
         if not figs:
-            self.results_status_label.configure(text=f"No results yet in {output_dir} — run the pipeline first.")
+            self.results_status_label.configure(text=f"Results are written as CSV files to {output_dir}.")
             return
 
         self.results_status_label.configure(text=f"{len(figs)} chart(s).")

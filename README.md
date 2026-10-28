@@ -20,7 +20,6 @@ The pipeline:
 4. **Explainability**: SHAP analysis (`explainability.py`).
 5. **Reusability index**: per-particle provisional morphology-based score
    (`reusability.py`).
-6. **Figures**: `figures.py`, `paper_figures.py`, `plot_from_master.py`.
 
 ## Installation
 

@@ -8,7 +8,7 @@ One run: segment every image (SAM2) -> attachment detection ->
 morphology + physics-constrained features (calibrated to real microns)
 -> DINOv2 embeddings -> classify (unified XGBoost / prototype few-shot
 model, trained folders) -> explainability (SHAP /
-nearest-prototype) -> reusability score -> publication figures.
+nearest-prototype) -> reusability score.
 
 """
 
@@ -104,7 +104,6 @@ import classification
 from classification import train_and_compare, load_classifier, classify_particles
 from explainability import explain_predictions
 from reusability import ReusabilityScorer
-import figures
 
 
 # ============================================================
@@ -359,9 +358,6 @@ def run_pipeline(args: argparse.Namespace):
         summary_df.to_csv(os.path.join(args.output_dir, "reusability_summary.csv"), index=False)
 
         logger.info(f"Wrote {scored_csv} and reusability_summary.csv")
-
-    with Timer("Generating figures"):
-        figures.generate_report_figures(args.output_dir, save=True, close=True)
 
     logger.info("Pipeline complete.")
 
