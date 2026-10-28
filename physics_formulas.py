@@ -4,35 +4,6 @@ ParticleVision V4
 
 Physics-Constrained Feature Derivation
 
-Two kinds of physics-motivated features, both computed the same way
-for every particle regardless of class (v4 has no per-class hardcoded
-formula gate):
-
-1. Composite SHAPE descriptors (PhysicsDescriptorExtractor) — carried
-   over from v3, already validated: bounded [0,1]-ish combinations of
-   the raw morphology measurements (sphericity, elongation, porosity,
-   roughness, neck/dent locality, comet/tail asymmetry, flatness).
-   These don't require calibration and work on any particle.
-
-2. The manuscript's three NAMED physics equations
-   (compute_named_physics_formulas) — Laplace-pressure porosity
-   plausibility, Weber-number satellite-formation likelihood, and a
-   Griffith/K_IC-based crack-risk score. These are calibration-driven:
-   they need `particle.size_um` and real hole/defect measurements
-   converted to microns (morphology.apply_calibration must have run
-   first), and every constant they use (surface tension, density,
-   reference velocity, Young's modulus, fracture toughness) is a
-   documented literature-typical value for Inconel 718 in
-   config.PhysicsConstants, not something measured from this dataset
-   — state that explicitly wherever these are reported. The Weber
-   number in particular is a REFERENCE-CONDITION PLAUSIBILITY INDEX,
-   not a per-particle velocity measurement: SEM gives no direct
-   ejection-velocity data, so a fixed representative velocity from
-   config is used.
-
-Both feature groups feed the SAME fused vector (feature_fusion.py) into
-the SAME unified classifier (classification.py) — physics here means
-"physically-motivated input feature," not "hardcoded decision rule."
 """
 
 from __future__ import annotations
@@ -178,9 +149,7 @@ def compute_named_physics_formulas(particle: Particle, constants) -> Particle:
     # ---------------------------------------------------
     # 1. LAPLACE PRESSURE — porosity plausibility (dP = 2*gamma/r)
     # ---------------------------------------------------
-    # Prefer the raw (pre-hole-fill) largest-hole measurement — see
-    # segmentation.compute_raw_hole_stats' docstring for why the
-    # post-fill mask under-reports small pores.
+
 
     largest_hole_area_px = particle.metadata.get("raw_largest_hole_area_px")
 
@@ -231,10 +200,7 @@ def compute_named_physics_formulas(particle: Particle, constants) -> Particle:
     # 3. GRIFFITH / K_IC CRACK RISK
     #    (sigma_critical = K_IC / sqrt(pi * c))
     # ---------------------------------------------------
-    # Crack-length proxy c = the deepest localized surface defect
-    # (convexity_defect_max_depth), converted to microns. A shallow/
-    # absent defect (c ~ 0) implies no measurable flaw to evaluate —
-    # reported as NaN, not an artificially huge critical stress.
+
 
     defect_depth_px = particle.morphology.get("convexity_defect_max_depth")
 
