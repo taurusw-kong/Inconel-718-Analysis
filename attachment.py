@@ -7,14 +7,12 @@ Attachment Detection
 Whether particles in the same image are physically attached to each
 other (a satellite fused to a host sphere, two comparable particles
 bonded together, a multi-particle agglomerate) — computed directly
-from mask geometry as a first-class relationship, not inferred
-indirectly through a single per-particle shape score the way v3's
-`neck_score` did.
+from mask geometry as a first-class relationship.
 
 This produces CONTINUOUS evidence (contact fraction, neighbor
 distance) fed to the unified classifier as features, not a hard
 accept/reject gate — v4 deliberately does not hardcode "attached" as a
-classification rule for any of the 10 classes; the classifier learns
+classification rule for any of the 10 classes, the classifier learns
 how much this evidence matters per class.
 """
 
@@ -59,30 +57,12 @@ def compute_attachments(
     min_contact_fraction: float = 0.03,
     host_size_ratio: float = 1.8,
 ) -> List[Particle]:
-    """
-    Computes attachment relationships between every pair of particles
-    in `particles` (expected to all be from the SAME image — attachment
-    is only meaningful within one image). Mutates each particle's
-    `.attachment` in place and returns the same list.
-
-    For each candidate pair (bounding boxes within `contact_gap_px` of
-    each other, cheap pre-filter before any mask math): dilate one
-    particle's mask by `contact_gap_px` and intersect with the other's
-    mask. Non-zero intersection means the two particles are touching
-    or near-touching after accounting for segmentation/smoothing noise
-    that can leave a 1-2px real gap at a genuine fusion neck.
-    `boundary_contact_fraction` normalizes that intersection by the
-    particle's own perimeter, so a large particle grazing a small one
-    doesn't score the same as two particles sharing half their
-    boundary.
-    """
 
     n = len(particles)
 
     if n == 0:
         return particles
-
-    # Centroid nearest-neighbor distance — a continuous feature
+    # Centroid nearest-neighbor distance, a continuous feature
     # regardless of contact, computed once per particle up front.
     centroids = np.array(
         [[p.centroid.x, p.centroid.y] for p in particles], dtype=float
@@ -96,8 +76,6 @@ def compute_attachments(
             particle.attachment.nearest_neighbor_distance_px = float(dists.min())
         else:
             particle.attachment.nearest_neighbor_distance_px = float("nan")
-
-    # Pairwise contact detection.
     for i in range(n):
 
         a = particles[i]
@@ -106,7 +84,7 @@ def compute_attachments(
         if a_perimeter is None or np.isnan(a_perimeter) or a_perimeter <= 0:
             continue
 
-        a_dilated = None  # computed lazily, reused across b's below
+        a_dilated = None  
         a_equiv = a.morphology.get("equivalent_diameter")
 
         for j in range(i + 1, n):
@@ -128,13 +106,11 @@ def compute_attachments(
             b_equiv = b.morphology.get("equivalent_diameter")
 
             # contact_pixels is a 2D area (the dilation ring intersected
-            # with b's mask); perimeter is a 1D length — dividing area
+            # with b's mask); perimeter is a 1D length, dividing area
             # directly by length isn't a bounded "fraction" (confirmed
             # on real segmented particles: it readily exceeds 1, up to
             # ~6, for particles with a wide/long shared contact zone).
             # Normalizing by the ring's own approximate max area
-            # (perimeter * gap, i.e. "the whole boundary is touching
-            # something") keeps this close to a genuine [0, ~1] fraction.
             ring_area_scale = max(contact_gap_px, 1)
 
             a_fraction = contact_pixels / (a_perimeter * ring_area_scale)
