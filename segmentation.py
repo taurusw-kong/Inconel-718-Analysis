@@ -84,7 +84,7 @@ def resolve_sam2_config_name(model_cfg):
     SAM2's build_sam2() resolves `model_cfg` through Hydra's
     `pkg://sam2` search path — i.e. it must be a path *relative to
     the installed sam2 package's own directory*
-    (e.g. "configs/sam2.1/sam2.1_hiera_s.yaml"), never an absolute
+    (e.g. "configs/sam2.1/sam2.1_hiera_l.yaml"), never an absolute
     filesystem path. Hydra silently mishandles an absolute path
     (it strips the leading slash and searches for the rest inside
     the package, which fails with a confusing
@@ -95,7 +95,7 @@ def resolve_sam2_config_name(model_cfg):
     to the form SAM2/Hydra actually expects whenever the given path
     is a real file that lives inside the installed `sam2` package.
     Anything else (a bare relative name the user already got right,
-    e.g. "configs/sam2.1/sam2.1_hiera_s.yaml") is passed through
+    e.g. "configs/sam2.1/sam2.1_hiera_l.yaml") is passed through
     unchanged.
     """
 

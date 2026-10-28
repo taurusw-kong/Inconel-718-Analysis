@@ -63,8 +63,8 @@ SURFACE_COLOR = (252, 252, 251)  # matches figures.py's SURFACE background
 REAL_PATH_DEFAULTS = {
     "input_dir": "SEM",
     "output_dir": "output",
-    "checkpoint": "checkpoints/sam2.1_hiera_small.pt",
-    "model_cfg": "configs/sam2.1/sam2.1_hiera_s.yaml",
+    "checkpoint": "checkpoints/sam2.1_hiera_large.pt",
+    "model_cfg": "configs/sam2.1/sam2.1_hiera_l.yaml",
 }
 
 

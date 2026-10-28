@@ -31,7 +31,7 @@ pip install -r requirements.txt
 pip install git+https://github.com/facebookresearch/sam2.git
 ```
 
-Download a SAM2.1 checkpoint (for example `sam2.1_hiera_small.pt`) from
+Download the SAM2.1 Hiera-Large checkpoint (`sam2.1_hiera_large.pt`) from
 the [SAM2 repository](https://github.com/facebookresearch/sam2) into
 `checkpoints/`.
 
@@ -41,8 +41,8 @@ the [SAM2 repository](https://github.com/facebookresearch/sam2) into
 python main.py \
   --input_dir SEM \
   --output_dir output \
-  --checkpoint checkpoints/sam2.1_hiera_small.pt \
-  --model_cfg configs/sam2.1/sam2.1_hiera_s.yaml \
+  --checkpoint checkpoints/sam2.1_hiera_large.pt \
+  --model_cfg configs/sam2.1/sam2.1_hiera_l.yaml \
   --fov_width_um <field-of-view width in µm> \
   --device cpu
 ```
