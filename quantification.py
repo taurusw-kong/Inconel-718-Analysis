@@ -12,35 +12,10 @@ imperfect classifier: individual mistakes cancel out in aggregate as
 long as the classifier's error PATTERN is known.
 
 Simply counting predicted labels ("Classify and Count") is biased,
-and the bias does NOT shrink as you add particles — measured on this
-project's real classifier, raw counts sit at ~5.9 percentage points of
-error per class regardless of batch size, because a classifier that
-systematically confuses class A for B keeps doing so no matter how
-many particles you show it.
-
-Adjusted Classify and Count (ACC) removes that bias by inverting the
-confusion matrix. If M[i,j] = P(predict i | true j), then the expected
-predicted proportions are p_pred = M @ p_true, so p_true is recovered
-by solving that system. Measured improvement on this project's real
-confusion matrix:
-
-    batch size    raw counts    ACC-corrected
-       600          5.8 pp         4.9 pp
-     2,000          5.9 pp         3.0 pp
-     4,700          5.9 pp         2.1 pp
-
-— i.e. bias is removed and ordinary sampling noise then shrinks with
-batch size, as it should.
-
-References (both citable in a manuscript):
-  Forman, G. (2008). "Quantifying counts and costs via classification."
-      Data Mining and Knowledge Discovery, 17(2), 164-206.
-  Saerens, M., Latinne, P., Decaestecker, C. (2002). "Adjusting the
-      outputs of a classifier to new a priori probabilities."
-      Neural Computation, 14(1), 21-41.
+and the bias does NOT shrink as we add particles.
 
 IMPORTANT: the confusion matrix must come from HELD-OUT predictions
-(cross-validated out-of-fold), never from the training fit — a matrix
+(cross-validated out-of-fold), never from the training fit, a matrix
 built on data the model memorized would understate its true error rate
 and the correction would be wrong in the same optimistic direction.
 """
@@ -62,15 +37,7 @@ POPULATION_FILENAME = "population_estimate.csv"
 # ============================================================
 
 def build_correction_matrix(y_true, y_pred, class_names) -> pd.DataFrame:
-    """
-    M[i, j] = P(predicted class i | true class j), estimated from
-    held-out (out-of-fold) predictions. Columns therefore sum to 1.
-
-    A class the classifier never predicts correctly would give a
-    degenerate column; that is left visible rather than patched, since
-    it means the class genuinely cannot be quantified and the caller
-    should know.
-    """
+   
 
     from sklearn.metrics import confusion_matrix
 
@@ -110,16 +77,6 @@ def load_correction_matrix(output_dir: str):
 # ============================================================
 
 def adjust_proportions(raw_proportions: np.ndarray, matrix: pd.DataFrame) -> np.ndarray:
-    """
-    Solves M @ p_true = p_raw for p_true, in least-squares form (the
-    system can be slightly inconsistent from sampling noise), then
-    clips negatives and renormalizes.
-
-    Negative estimates are a normal artifact of the inversion when a
-    class is rare and the matrix is ill-conditioned — clipping to zero
-    is the standard treatment, and it is why a corrected estimate is
-    reported with an interval rather than as a point value.
-    """
 
     M = matrix.values
 
@@ -138,12 +95,7 @@ def estimate_population(
     n_bootstrap: int = 500,
     random_state: int = 42,
 ) -> pd.DataFrame:
-    """
-    Population composition for one batch, with a bootstrap confidence
-    interval over particles. Returns raw ("classify and count") and
-    corrected proportions side by side so a manuscript can show both
-    and justify the correction rather than silently applying it.
-    """
+  
 
     class_names = list(matrix.index)
     index = {c: i for i, c in enumerate(class_names)}
@@ -189,14 +141,7 @@ def estimate_population(
 # ============================================================
 
 def compare_cycles(cycle_predictions: dict, matrix: pd.DataFrame, **kwargs) -> pd.DataFrame:
-    """
-    `cycle_predictions`: {cycle_name: iterable of predicted labels}.
-
-    Returns one tidy row per (cycle, class) with corrected proportions
-    and CI — the table a reusability trend plot is built from.
-    Cycles are kept in the caller's given order, which is why the
-    pipeline names cycle folders so they sort chronologically.
-    """
+  
 
     frames = []
 
