@@ -9,13 +9,9 @@ Implements the architecture of Gorishniy et al., "Revisiting Deep
 Learning Models for Tabular Data" (NeurIPS 2021), for Section 4.8.2 of
 the manuscript, wrapped in a scikit-learn-compatible estimator so it
 drops into the SAME group-aware cross-validation harness as every other
-model in classification.py — no separate evaluation path, no separate
+model in classification.py, no separate evaluation path, no separate
 preprocessing, no opportunity for an accidental advantage.
 
-Written directly against torch rather than pulling in `rtdl`: the
-architecture is small, and a local implementation keeps the dependency
-surface (and the reviewer's "what exactly did you run?" question)
-minimal and inspectable.
 
 ARCHITECTURE
     Feature Tokenizer   each of the d scalar features becomes a
@@ -30,14 +26,6 @@ ARCHITECTURE
                         trains more stably at small depth than the
                         post-norm variant.
     Head                LayerNorm -> ReLU -> Linear to n_classes.
-
-EXPECTATION, STATED UP FRONT
-    Transformers are data-hungry. On a labeled set of this size this
-    model is expected to UNDERPERFORM gradient-boosted trees. That is a
-    legitimate, reportable finding (it is the central claim of
-    Grinsztajn et al. 2022, cited in the manuscript), not a failure of
-    the implementation — which is exactly why it is worth running
-    rather than asserting.
 """
 
 from __future__ import annotations
@@ -65,15 +53,7 @@ def _pick_device() -> torch.device:
 # ============================================================
 
 class FeatureTokenizer(nn.Module):
-    """
-    Turns a row of d scalar features into d tokens of width d_token.
 
-    Each feature gets its OWN weight vector and bias (rather than one
-    shared projection), which is what lets the transformer distinguish
-    "the value 0.9 in the circularity column" from "the value 0.9 in the
-    solidity column" — a shared projection would map them identically
-    and throw away the column identity the whole architecture depends on.
-    """
 
     def __init__(self, n_features: int, d_token: int):
         super().__init__()
@@ -81,15 +61,13 @@ class FeatureTokenizer(nn.Module):
         self.bias = nn.Parameter(torch.empty(n_features, d_token))
         self.cls_token = nn.Parameter(torch.empty(1, 1, d_token))
 
-        # Uniform(-1/sqrt(d), 1/sqrt(d)) — the initialization used in the
-        # reference implementation; wider init destabilizes attention at
-        # this depth.
+        
         bound = 1.0 / np.sqrt(d_token)
         for p in (self.weight, self.bias, self.cls_token):
             nn.init.uniform_(p, -bound, bound)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (batch, n_features) -> (batch, n_features + 1, d_token)
+
         tokens = x.unsqueeze(-1) * self.weight.unsqueeze(0) + self.bias.unsqueeze(0)
         cls = self.cls_token.expand(x.shape[0], -1, -1)
         return torch.cat([cls, tokens], dim=1)
@@ -145,25 +123,7 @@ class _FTTransformerNet(nn.Module):
 # ============================================================
 
 class FTTransformerClassifier(BaseEstimator, ClassifierMixin):
-    """
-    sklearn-API wrapper so this model can be passed to
-    cross_val_predict alongside XGBoost et al. without special-casing.
-
-    A held-out slice of each training fold drives early stopping. That
-    split is carved out of the TRAINING data only — the outer CV's test
-    fold is never touched here, so early stopping cannot leak the
-    quantity being measured.
-
-    That inner split must ALSO be group-aware, and `fit` accepts the
-    training fold's `groups` to make it so. Splitting the inner
-    validation set at random instead puts rotated/flipped views of the
-    same source particle on both sides of it; the network then trivially
-    memorizes them, inner validation loss collapses toward zero, and
-    early stopping fires on a signal that says nothing about
-    generalization — handicapping the model with a badly-chosen stopping
-    point rather than measuring it fairly. (Observed directly here:
-    random inner splits drove val loss to ~0.002 within ~140 epochs.)
-    """
+    
 
     def __init__(self, d_token: int = 64, n_blocks: int = 3, n_heads: int = 8,
                  dropout: float = 0.2, lr: float = 1e-3, weight_decay: float = 1e-5,
@@ -196,11 +156,7 @@ class FTTransformerClassifier(BaseEstimator, ClassifierMixin):
         rng = np.random.default_rng(self.random_state)
         device = _pick_device()
 
-        # Inner validation split for early stopping. When groups are
-        # supplied, hold out whole GROUPS (all augmented views of a
-        # source particle move together) so inner validation measures
-        # generalization to unseen particles, not recall of rotated
-        # copies already seen during training.
+     
         n_val = max(int(len(X) * self.val_fraction), n_classes)
 
         if groups is not None:
